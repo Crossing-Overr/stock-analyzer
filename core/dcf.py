@@ -1,0 +1,65 @@
+from dataclasses import dataclass
+
+
+@dataclass
+class ScenarioResult:
+    growth_start: float
+    growth_path: list[float]
+    fcfs_pv: list[float]
+    pv_terminal: float
+    enterprise_value: float
+    equity_value: float
+    intrinsic: float
+    tv_share: float
+
+
+def run_dcf(fcf_base, growth_rates, wacc, terminal_growth, years, shares, net_debt):
+    """
+    2-фазная DCF с линейным затуханием роста.
+
+    Рост в 1-й год = стартовый (из growth_rates), к последнему году линейно
+    спадает к terminal_growth. Это убирает нереалистичное компаундирование и
+    не даёт терминальной стоимости раздувать оценку.
+
+    growth_rates: dict {"bear": float, "base": float, "bull": float} —
+        стартовые годовые темпы роста FCF.
+    Возвращает dict {name: ScenarioResult}.
+    """
+    # Модель Гордона требует wacc > terminal_growth. Защищаемся от деления
+    # на ноль/отрицательного знаменателя, слегка поджимая терминальный рост.
+    eff_terminal = min(terminal_growth, wacc - 1e-3)
+
+    results = {}
+    for name, g_start in growth_rates.items():
+        fcf = fcf_base
+        growth_path = []
+        fcfs_pv = []
+        for y in range(1, years + 1):
+            if years > 1:
+                g = g_start + (eff_terminal - g_start) * (y - 1) / (years - 1)
+            else:
+                g = g_start
+            growth_path.append(g)
+            fcf = fcf * (1 + g)
+            fcfs_pv.append(fcf / (1 + wacc) ** y)
+
+        terminal_fcf = fcf * (1 + eff_terminal)
+        terminal_value = terminal_fcf / (wacc - eff_terminal)
+        pv_terminal = terminal_value / (1 + wacc) ** years
+
+        enterprise_value = sum(fcfs_pv) + pv_terminal
+        equity_value = enterprise_value - net_debt
+        intrinsic = equity_value / shares if shares > 0 else 0.0
+        tv_share = pv_terminal / enterprise_value if enterprise_value > 0 else 0.0
+
+        results[name] = ScenarioResult(
+            growth_start=g_start,
+            growth_path=growth_path,
+            fcfs_pv=fcfs_pv,
+            pv_terminal=pv_terminal,
+            enterprise_value=enterprise_value,
+            equity_value=equity_value,
+            intrinsic=intrinsic,
+            tv_share=tv_share,
+        )
+    return results
