@@ -18,12 +18,12 @@
   - `tests/` — pytest для core-логики (`pytest` для прогона).
 - Данные: Yahoo Finance через `yfinance` (без API-ключа), кэш `@st.cache_data`.
 - Избранное хранится в браузере посетителя (`streamlit-local-storage`).
-- Запуск:
+- Запуск (на Mac владельца `pip`/`streamlit` не в PATH — только через `python3 -m`):
   ```bash
-  pip install -r requirements.txt
-  streamlit run app.py
+  python3 -m pip install -r requirements.txt
+  python3 -m streamlit run app.py
   ```
-  Открывается на `http://localhost:8501`.
+  Открывается на `http://localhost:8501`. Тесты: `python3 -m pytest`.
 
 ## Что уже есть в app.py
 

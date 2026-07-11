@@ -8,16 +8,18 @@
 ## Запуск локально
 
 ```bash
-pip install -r requirements.txt
-streamlit run app.py
+python3 -m pip install -r requirements.txt
+python3 -m streamlit run app.py
 ```
 
 Откроется на http://localhost:8501
 
+> На этом Mac `pip` и `streamlit` не в PATH — запускай через `python3 -m`.
+
 ## Тесты
 
 ```bash
-pytest
+python3 -m pytest
 ```
 
 ## Деплой (Streamlit Community Cloud)
