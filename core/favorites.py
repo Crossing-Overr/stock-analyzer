@@ -1,4 +1,6 @@
-_STORAGE_KEY = "stock_analysator_favorites"
+import streamlit as st
+
+_SESSION_KEY = "favorites"
 
 
 def normalize(symbols) -> list:
@@ -27,22 +29,17 @@ def remove_symbol(symbols: list, symbol: str) -> list:
     return [s for s in normalize(symbols) if s != target]
 
 
-# ─── Обёртка над браузерным localStorage ────────────────────────────────────
-def _storage():
-    # Импортируем лениво, чтобы чистые хелперы тестировались без зависимости.
-    from streamlit_local_storage import LocalStorage
-    return LocalStorage()
-
-
+# ─── Хранилище на время сессии (st.session_state) ───────────────────────────
+# Пока держим избранное в состоянии сессии Streamlit: надёжно и без внешних
+# зависимостей. Избранное живёт, пока открыта вкладка. Постоянное хранение в
+# браузере (localStorage, переживает перезагрузку) — следующий шаг; интерфейс
+# этих функций менять не придётся.
 def get_favorites() -> list:
-    raw = _storage().getItem(_STORAGE_KEY)
-    if not raw:
-        return []
-    return normalize([s for s in str(raw).split(",")])
+    return normalize(st.session_state.get(_SESSION_KEY, []))
 
 
 def save_favorites(symbols: list) -> None:
-    _storage().setItem(_STORAGE_KEY, ",".join(normalize(symbols)))
+    st.session_state[_SESSION_KEY] = normalize(symbols)
 
 
 def add_favorite(symbol: str) -> list:
