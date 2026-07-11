@@ -9,8 +9,15 @@
 
 ## Стек и запуск
 
-- Один файл: `app.py` (Streamlit + yfinance + plotly + pandas + numpy).
-- Данные: Yahoo Finance через `yfinance` (без API-ключа).
+- Модульная структура (Streamlit multipage + yfinance + plotly + pandas + numpy):
+  - `app.py` — вход: конфиг страницы, сайдбар с DCF-слайдерами, приветствие.
+  - `pages/` — вкладки: `Анализ`, `Сравнение`, `Избранное`.
+  - `core/` — чистая логика: `data.py` (TickerData, safe, форматтеры, кэш-загрузка),
+    `dcf.py` (`run_dcf`), `compare.py` (таблица сравнения), `favorites.py` (localStorage).
+  - `ui/` — отрисовка: `theme.py` (CSS), `sidebar.py`, `components.py` (карточки/графики).
+  - `tests/` — pytest для core-логики (`pytest` для прогона).
+- Данные: Yahoo Finance через `yfinance` (без API-ключа), кэш `@st.cache_data`.
+- Избранное хранится в браузере посетителя (`streamlit-local-storage`).
 - Запуск:
   ```bash
   pip install -r requirements.txt
