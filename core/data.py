@@ -149,6 +149,20 @@ class TickerData:
                 return [cashflow.loc[key][c] for c in cashflow.columns]
         return []
 
+    @staticmethod
+    def _dividend_yield(info) -> Optional[float]:
+        """Дивдоходность как ДРОБЬ (0.025 = 2.5%), под общий fmt_pct.
+
+        Предпочитаем trailingAnnualDividendYield (стабильная дробь). Поле
+        dividendYield в свежих версиях yfinance приходит уже в процентах
+        (0.34 = 0.34%), поэтому его делим на 100.
+        """
+        frac = safe(info, "trailingAnnualDividendYield")
+        if frac is not None:
+            return frac
+        pct = safe(info, "dividendYield")
+        return pct / 100 if pct is not None else None
+
     @classmethod
     def from_info(cls, symbol, info, history, financials, cashflow=None) -> "TickerData":
         trailing_fcf = safe(info, "freeCashflow")
@@ -174,7 +188,7 @@ class TickerData:
             ev_to_ebitda=safe(info, "enterpriseToEbitda"),
             ev_to_revenue=safe(info, "enterpriseToRevenue"),
             peg=safe(info, "pegRatio"),
-            dividend_yield=safe(info, "dividendYield"),
+            dividend_yield=cls._dividend_yield(info),
             total_revenue=safe(info, "totalRevenue"),
             gross_profits=safe(info, "grossProfits"),
             ebitda=safe(info, "ebitda"),

@@ -48,3 +48,21 @@ def test_tickerdata_from_info_defaults_missing_fields():
     assert td.name == "XYZ"             # longName отсутствует → symbol
     assert td.market_cap is None
     assert td.net_debt == 0.0           # нет долга/кэша → 0
+
+
+def test_dividend_yield_uses_trailing_fraction():
+    # trailingAnnualDividendYield — дробь; храним как есть (fmt_pct ×100 = верно)
+    td = TickerData.from_info("KO", {"currentPrice": 83.0,
+                                     "trailingAnnualDividendYield": 0.02445,
+                                     "dividendYield": 2.52}, None, None)
+    assert td.dividend_yield == pytest.approx(0.02445)
+
+def test_dividend_yield_falls_back_to_percent_field_scaled():
+    # нет trailing → dividendYield приходит в процентах (2.52) → делим на 100
+    td = TickerData.from_info("KO", {"currentPrice": 83.0, "dividendYield": 2.52},
+                              None, None)
+    assert td.dividend_yield == pytest.approx(0.0252)
+
+def test_dividend_yield_none_when_absent():
+    td = TickerData.from_info("XYZ", {"currentPrice": 10.0}, None, None)
+    assert td.dividend_yield is None
