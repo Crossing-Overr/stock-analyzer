@@ -1,3 +1,5 @@
+import math
+import statistics
 from dataclasses import dataclass
 from typing import Any, Optional
 
@@ -45,6 +47,31 @@ def fmt_mult(n, suffix: str = "x") -> str:
     if _is_missing(n):
         return "N/A"
     return f"{n:.1f}{suffix}"
+
+
+def normalize_fcf(annual_fcf, trailing=None, window: int = 3):
+    """
+    Нормализованный FCF для DCF: медиана последних `window` валидных годовых
+    значений (newest-first). Сглаживает выбросы от лумпи-капекса (напр. AMZN,
+    где один год со стройкой ЦОД занижает trailing-FCF). Если годовых данных
+    нет — откат на trailing (yfinance info.freeCashflow).
+    """
+    vals = []
+    for v in (annual_fcf or []):
+        if v is None:
+            continue
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if math.isnan(fv):
+            continue
+        vals.append(fv)
+        if len(vals) >= window:
+            break
+    if vals:
+        return statistics.median(vals)
+    return trailing
 
 
 # ─── TickerData ─────────────────────────────────────────────────────────────
@@ -95,6 +122,8 @@ class TickerData:
     beta: Optional[float]
     short_percent_float: Optional[float]
 
+    fcf_normalized: Optional[float] = None  # база FCF для DCF (медиана лет)
+
     history: Any = None       # pandas DataFrame или None
     financials: Any = None    # pandas DataFrame или None
 
@@ -110,8 +139,20 @@ class TickerData:
             return (self.price - self.previous_close) / self.previous_close * 100
         return 0.0
 
+    @staticmethod
+    def _annual_fcf(cashflow) -> list:
+        """Годовые значения FCF из отчёта о ДДС, newest-first. Пусто если нет."""
+        if cashflow is None or getattr(cashflow, "empty", True):
+            return []
+        for key in ["Free Cash Flow", "FreeCashFlow"]:
+            if key in cashflow.index:
+                return [cashflow.loc[key][c] for c in cashflow.columns]
+        return []
+
     @classmethod
-    def from_info(cls, symbol, info, history, financials) -> "TickerData":
+    def from_info(cls, symbol, info, history, financials, cashflow=None) -> "TickerData":
+        trailing_fcf = safe(info, "freeCashflow")
+        fcf_normalized = normalize_fcf(cls._annual_fcf(cashflow), trailing=trailing_fcf)
         return cls(
             symbol=symbol,
             name=safe(info, "longName", symbol),
@@ -152,6 +193,7 @@ class TickerData:
             shares_outstanding=safe(info, "sharesOutstanding"),
             beta=safe(info, "beta"),
             short_percent_float=safe(info, "shortPercentOfFloat"),
+            fcf_normalized=fcf_normalized,
             history=history,
             financials=financials,
         )
@@ -174,7 +216,11 @@ def load_ticker(symbol: str) -> Optional[TickerData]:
             financials = tk.financials
         except Exception:
             financials = None
-        td = TickerData.from_info(symbol, info, history, financials)
+        try:
+            cashflow = tk.cashflow
+        except Exception:
+            cashflow = None
+        td = TickerData.from_info(symbol, info, history, financials, cashflow)
         return td if td.has_price() else None
     except Exception:
         return None

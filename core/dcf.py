@@ -63,3 +63,19 @@ def run_dcf(fcf_base, growth_rates, wacc, terminal_growth, years, shares, net_de
             tv_share=tv_share,
         )
     return results
+
+
+def dcf_upside_base(fcf_base, price, shares, net_debt,
+                    growth_rates, wacc, terminal_growth, years):
+    """
+    Апсайд Base-сценария в % ((справедливая - текущая)/текущая), либо None если
+    DCF неприменим: нет/отрицательный FCF, нет акций или цены, либо расчётная
+    справедливая цена вышла неположительной. Используется в Сравнении и Избранном.
+    """
+    if not fcf_base or fcf_base <= 0 or not shares or not price or price <= 0:
+        return None
+    dcf = run_dcf(fcf_base=fcf_base, growth_rates=growth_rates, wacc=wacc,
+                  terminal_growth=terminal_growth, years=years,
+                  shares=shares, net_debt=net_debt)
+    iv = dcf["base"].intrinsic
+    return (iv - price) / price * 100 if iv > 0 else None
