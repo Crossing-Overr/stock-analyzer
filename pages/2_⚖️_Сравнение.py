@@ -1,7 +1,7 @@
 import streamlit as st
 
 from core.data import load_ticker
-from core.dcf import run_dcf
+from core.dcf import dcf_upside_base
 from core.compare import build_comparison_table
 from core.favorites import get_favorites
 from ui.theme import inject_theme
@@ -37,17 +37,14 @@ if missing:
 if not tickers:
     st.stop()
 
-# апсайд Base-сценария для каждого
-base_upsides = {}
-for td in tickers:
-    if td.free_cashflow and td.shares_outstanding and td.price:
-        dcf = run_dcf(fcf_base=td.free_cashflow, growth_rates=params.growth_rates,
-                      wacc=params.wacc, terminal_growth=params.terminal_growth,
-                      years=params.years, shares=td.shares_outstanding, net_debt=td.net_debt)
-        iv = dcf["base"].intrinsic
-        base_upsides[td.symbol] = (iv - td.price) / td.price * 100 if iv > 0 else None
-    else:
-        base_upsides[td.symbol] = None
+# апсайд Base-сценария для каждого (по нормализованному FCF; None если непригодно)
+base_upsides = {
+    td.symbol: dcf_upside_base(
+        td.fcf_normalized, td.price, td.shares_outstanding, td.net_debt,
+        params.growth_rates, params.wacc, params.terminal_growth, params.years,
+    )
+    for td in tickers
+}
 
 table = build_comparison_table(tickers, base_upsides)
 

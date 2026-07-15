@@ -1,7 +1,7 @@
 import streamlit as st
 
 from core.data import load_ticker, fmt_large
-from core.dcf import run_dcf
+from core.dcf import dcf_upside_base
 from core.favorites import get_favorites, add_favorite, remove_favorite
 from ui.theme import inject_theme
 from ui.sidebar import render_sidebar
@@ -37,15 +37,11 @@ for sym in favorites:
         c_name.markdown(f"**{sym}** · {td.name}")
         c_price.metric("Цена", f"{td.price:.2f}")
         c_chg.metric("Δ день", f"{arrow} {abs(td.day_change_pct):.2f}%")
-        if td.free_cashflow and td.shares_outstanding and td.price:
-            dcf = run_dcf(fcf_base=td.free_cashflow, growth_rates=params.growth_rates,
-                          wacc=params.wacc, terminal_growth=params.terminal_growth,
-                          years=params.years, shares=td.shares_outstanding, net_debt=td.net_debt)
-            iv = dcf["base"].intrinsic
-            up = (iv - td.price) / td.price * 100 if iv > 0 else None
-            c_up.metric("Апсайд Base", f"{up:+.1f}%" if up is not None else "N/A")
-        else:
-            c_up.metric("Апсайд Base", "N/A")
+        up = dcf_upside_base(
+            td.fcf_normalized, td.price, td.shares_outstanding, td.net_debt,
+            params.growth_rates, params.wacc, params.terminal_growth, params.years,
+        )
+        c_up.metric("Апсайд Base", f"{up:+.1f}%" if up is not None else "N/A")
     if c_del.button("🗑", key=f"del_{sym}"):
         remove_favorite(sym)
         st.rerun()
