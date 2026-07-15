@@ -1,0 +1,10 @@
+# Тёмная тема (Catppuccin Mocha) — под неё сделан весь CSS в ui/theme.py.
+# Раньше приложение шло на светлой теме по умолчанию → тёмные карточки с тёмным
+# текстом = плохой контраст. Тёмная база делает текст светлым и читаемым.
+[theme]
+base = "dark"
+primaryColor = "#89b4fa"
+backgroundColor = "#181825"
+secondaryBackgroundColor = "#1e1e2e"
+textColor = "#cdd6f4"
+font = "sans serif"
