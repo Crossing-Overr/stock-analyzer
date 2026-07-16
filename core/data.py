@@ -74,6 +74,20 @@ def normalize_fcf(annual_fcf, trailing=None, window: int = 3):
     return trailing
 
 
+def subtract_series(a, b) -> list:
+    """
+    Поэлементная разность двух годовых рядов (a - b), напр. FCF минус SBC.
+    Некорректная пара → nan (его отфильтрует normalize_fcf).
+    """
+    out = []
+    for x, y in zip(a or [], b or []):
+        try:
+            out.append(float(x) - float(y))
+        except (TypeError, ValueError):
+            out.append(float("nan"))
+    return out
+
+
 # ─── TickerData ─────────────────────────────────────────────────────────────
 @dataclass
 class TickerData:
@@ -123,6 +137,8 @@ class TickerData:
     short_percent_float: Optional[float]
 
     fcf_normalized: Optional[float] = None  # база FCF для DCF (медиана лет)
+    fcf_normalized_ex_sbc: Optional[float] = None  # то же, за вычетом SBC
+    sbc_normalized: Optional[float] = None  # медианный SBC за годы
 
     history: Any = None       # pandas DataFrame или None
     financials: Any = None    # pandas DataFrame или None
@@ -140,13 +156,13 @@ class TickerData:
         return 0.0
 
     @staticmethod
-    def _annual_fcf(cashflow) -> list:
-        """Годовые значения FCF из отчёта о ДДС, newest-first. Пусто если нет."""
-        if cashflow is None or getattr(cashflow, "empty", True):
+    def _annual_row(statement, keys) -> list:
+        """Годовые значения строки отчёта, newest-first. Пусто, если строки нет."""
+        if statement is None or getattr(statement, "empty", True):
             return []
-        for key in ["Free Cash Flow", "FreeCashFlow"]:
-            if key in cashflow.index:
-                return [cashflow.loc[key][c] for c in cashflow.columns]
+        for key in keys:
+            if key in statement.index:
+                return [statement.loc[key][c] for c in statement.columns]
         return []
 
     @staticmethod
@@ -166,7 +182,18 @@ class TickerData:
     @classmethod
     def from_info(cls, symbol, info, history, financials, cashflow=None) -> "TickerData":
         trailing_fcf = safe(info, "freeCashflow")
-        fcf_normalized = normalize_fcf(cls._annual_fcf(cashflow), trailing=trailing_fcf)
+        annual_fcf = cls._annual_row(cashflow, ["Free Cash Flow", "FreeCashFlow"])
+        annual_sbc = cls._annual_row(
+            cashflow, ["Stock Based Compensation", "StockBasedCompensation"])
+
+        fcf_normalized = normalize_fcf(annual_fcf, trailing=trailing_fcf)
+        sbc_normalized = normalize_fcf(annual_sbc) if annual_sbc else None
+        # Вычитаем SBC по каждому году отдельно, потом берём медиану — это
+        # корректнее, чем вычитать медиану SBC из медианы FCF.
+        fcf_normalized_ex_sbc = (
+            normalize_fcf(subtract_series(annual_fcf, annual_sbc))
+            if (annual_fcf and annual_sbc) else None
+        )
         return cls(
             symbol=symbol,
             name=safe(info, "longName", symbol),
@@ -208,6 +235,8 @@ class TickerData:
             beta=safe(info, "beta"),
             short_percent_float=safe(info, "shortPercentOfFloat"),
             fcf_normalized=fcf_normalized,
+            fcf_normalized_ex_sbc=fcf_normalized_ex_sbc,
+            sbc_normalized=sbc_normalized,
             history=history,
             financials=financials,
         )

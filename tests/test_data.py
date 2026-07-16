@@ -1,5 +1,7 @@
+import math
+import pandas as pd
 import pytest
-from core.data import safe, fmt_large, fmt_pct, fmt_mult, TickerData
+from core.data import safe, fmt_large, fmt_pct, fmt_mult, TickerData, subtract_series
 
 def test_safe_returns_default_for_none_nan_empty():
     assert safe({"x": None}, "x", "D") == "D"
@@ -66,3 +68,47 @@ def test_dividend_yield_falls_back_to_percent_field_scaled():
 def test_dividend_yield_none_when_absent():
     td = TickerData.from_info("XYZ", {"currentPrice": 10.0}, None, None)
     assert td.dividend_yield is None
+
+
+def _cashflow(rows: dict):
+    """Отчёт о ДДС как у yfinance: строки — статьи, столбцы — годы (newest-first)."""
+    cols = [pd.Timestamp("2025-12-31"), pd.Timestamp("2024-12-31"), pd.Timestamp("2023-12-31")]
+    return pd.DataFrame.from_dict(rows, orient="index", columns=cols)
+
+
+def test_subtract_series_elementwise():
+    assert subtract_series([10.0, 20.0], [1.0, 2.0]) == [9.0, 18.0]
+
+
+def test_subtract_series_bad_pair_becomes_nan():
+    out = subtract_series([10.0, None], [1.0, 2.0])
+    assert out[0] == 9.0
+    assert math.isnan(out[1])
+
+
+def test_subtract_series_empty():
+    assert subtract_series([], [1.0]) == []
+    assert subtract_series(None, None) == []
+
+
+def test_fcf_ex_sbc_is_median_of_per_year_differences():
+    cf = _cashflow({"Free Cash Flow": [30.0, 20.0, 10.0],
+                    "Stock Based Compensation": [3.0, 2.0, 1.0]})
+    td = TickerData.from_info("X", {"currentPrice": 5.0}, None, None, cf)
+    assert td.fcf_normalized == 20.0                 # median(30,20,10)
+    assert td.sbc_normalized == 2.0                  # median(3,2,1)
+    assert td.fcf_normalized_ex_sbc == 18.0          # median(27,18,9), НЕ 20-2
+
+
+def test_fcf_ex_sbc_none_when_sbc_row_absent():
+    cf = _cashflow({"Free Cash Flow": [30.0, 20.0, 10.0]})
+    td = TickerData.from_info("X", {"currentPrice": 5.0}, None, None, cf)
+    assert td.fcf_normalized == 20.0
+    assert td.sbc_normalized is None
+    assert td.fcf_normalized_ex_sbc is None
+
+
+def test_fcf_ex_sbc_none_without_cashflow():
+    td = TickerData.from_info("X", {"currentPrice": 5.0, "freeCashflow": 7.0}, None, None)
+    assert td.fcf_normalized == 7.0                  # откат на trailing
+    assert td.fcf_normalized_ex_sbc is None
