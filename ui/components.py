@@ -136,3 +136,82 @@ def financials_history(financials) -> None:
         st.plotly_chart(fig, use_container_width=True)
     except Exception:
         st.caption("Историческая отчётность недоступна для этого тикера.")
+
+
+def reverse_dcf_cards(implied_growth_value, implied_return_value,
+                      terminal_growth: float, revenue_growth) -> None:
+    """Две карточки: заложенный в цену рост и ожидаемая доходность."""
+    c1, c2 = st.columns(2)
+
+    with c1:
+        if implied_growth_value is None:
+            value = "N/A"
+            sub = "Не определяется в диапазоне −50%…+100%"
+        else:
+            value = f"{implied_growth_value * 100:.1f}%"
+            sub = f"в 1-й год → {terminal_growth * 100:.1f}% к концу горизонта"
+            if revenue_growth is not None:
+                sub += (f"<br>Факт. рост выручки: "
+                        f"<b>{revenue_growth * 100:.1f}%</b>")
+        st.markdown(f"""
+        <div class="metric-card scenario-base">
+            <div class="metric-label">Заложенный рост FCF</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-sub">{sub}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+    with c2:
+        if implied_return_value is None:
+            value = "N/A"
+            sub = "Не определяется в диапазоне"
+        else:
+            value = f"{implied_return_value * 100:.1f}%"
+            sub = ("годовых при росте Base-сценария<br>"
+                   "Ориентир: гособлигации США 10 лет ≈ 4%")
+        st.markdown(f"""
+        <div class="metric-card scenario-base">
+            <div class="metric-label">Ожидаемая доходность</div>
+            <div class="metric-value">{value}</div>
+            <div class="metric-sub">{sub}</div>
+        </div>
+        """, unsafe_allow_html=True)
+
+
+def sensitivity_table(grid, mode: str = "upside") -> None:
+    """
+    Сетка чувствительности. mode: "upside" (апсайд %) или "price" (цена $).
+    Рендерим сырым HTML — в нём $ не превращается в формулу LaTeX.
+    """
+    header = "".join(
+        f"<th style='padding:6px 10px;text-align:right'>{w * 100:.1f}%</th>"
+        for w in grid.waccs
+    )
+    rows_html = ""
+    for row in grid.cells:
+        cells = ""
+        for cell in row:
+            if cell.intrinsic is None:
+                cells += ("<td style='padding:6px 10px;text-align:right;"
+                          "color:#6c7086'>—</td>")
+                continue
+            if mode == "price":
+                text = f"${cell.intrinsic:.2f}"
+            else:
+                text = f"{cell.upside:+.0f}%" if cell.upside is not None else "N/A"
+            cls = "cmp-best" if (cell.upside or 0) > 0 else "cmp-worst"
+            border = "border:2px solid #f9e2af;" if cell.is_current else ""
+            cells += (f"<td class='{cls}' style='padding:6px 10px;"
+                      f"text-align:right;{border}'>{text}</td>")
+        label = f"{row[0].terminal_growth * 100:.2f}%"
+        rows_html += (f"<tr><td style='padding:6px 10px;color:#a6adc8'>"
+                      f"{label}</td>{cells}</tr>")
+
+    st.markdown(f"""
+    <table style='width:100%;border-collapse:collapse;background:#1e1e2e;
+    border:1px solid #45475a;border-radius:12px'>
+    <thead><tr><th style='padding:6px 10px;text-align:left'>Терм. рост ↓ / WACC →</th>
+    {header}</tr></thead>
+    <tbody>{rows_html}</tbody>
+    </table>
+    """, unsafe_allow_html=True)
