@@ -1,6 +1,6 @@
 import math
 from core.dcf import run_dcf
-from core.dcf_analysis import implied_growth
+from core.dcf_analysis import implied_growth, implied_return
 
 PARAMS = dict(fcf_base=100.0, shares=10.0, net_debt=0.0,
               wacc=0.10, terminal_growth=0.025, years=5)
@@ -47,3 +47,31 @@ def test_implied_growth_none_for_zero_shares_or_price():
 def test_implied_growth_none_when_out_of_range():
     # Абсурдно высокая цена — даже рост +100% её не оправдывает
     assert implied_growth(price=1e9, **PARAMS) is None
+
+
+def test_implied_return_roundtrip():
+    # Цена, посчитанная при WACC 12%, должна дать обратно ≈12%
+    fair = _fair_price(0.08, wacc=0.12)
+    r = implied_return(price=fair, fcf_base=100.0, shares=10.0, net_debt=0.0,
+                       growth_start=0.08, terminal_growth=0.025, years=5)
+    assert r is not None
+    assert math.isclose(r, 0.12, abs_tol=1e-4)
+
+
+def test_implied_return_lower_price_means_higher_return():
+    common = dict(fcf_base=100.0, shares=10.0, net_debt=0.0,
+                  growth_start=0.08, terminal_growth=0.025, years=5)
+    cheap = implied_return(price=_fair_price(0.08, wacc=0.15), **common)
+    rich = implied_return(price=_fair_price(0.08, wacc=0.07), **common)
+    assert cheap > rich   # дешевле купил → больше заработал
+
+
+def test_implied_return_none_for_negative_fcf():
+    assert implied_return(price=100.0, fcf_base=-5.0, shares=10.0, net_debt=0.0,
+                          growth_start=0.08, terminal_growth=0.025, years=5) is None
+
+
+def test_implied_return_none_when_out_of_range():
+    # Абсурдно высокая цена — не оправдывается даже минимальной ставкой
+    assert implied_return(price=1e12, fcf_base=100.0, shares=10.0, net_debt=0.0,
+                          growth_start=0.08, terminal_growth=0.025, years=5) is None

@@ -5,6 +5,7 @@ from core.dcf import run_dcf
 # Диапазоны поиска для обратных задач
 GROWTH_LO = -0.50
 GROWTH_HI = 1.00
+RETURN_HI = 0.50
 
 
 def _intrinsic(fcf_base, growth_start, wacc, terminal_growth, years, shares, net_debt) -> float:
@@ -69,5 +70,27 @@ def implied_growth(price, fcf_base, shares, net_debt, wacc, terminal_growth, yea
 
     def f(g):
         return _intrinsic(fcf_base, g, wacc, terminal_growth, years, shares, net_debt) - price
+
+    return _bisect(f, lo, hi)
+
+
+def implied_return(price, fcf_base, shares, net_debt, growth_start, terminal_growth, years,
+                   hi: float = RETURN_HI) -> Optional[float]:
+    """
+    Ставка дисконтирования, при которой справедливая цена = рыночной, т.е.
+    «сколько годовых даст покупка по текущей цене при заданном росте».
+
+    Нижняя граница поиска — чуть выше терминального роста: ниже него модель
+    Гордона ломается (знаменатель wacc - g становится ≤ 0).
+    """
+    if not _inputs_valid(price, fcf_base, shares):
+        return None
+
+    lo = terminal_growth + 0.001
+    if lo >= hi:
+        return None
+
+    def f(r):
+        return _intrinsic(fcf_base, growth_start, r, terminal_growth, years, shares, net_debt) - price
 
     return _bisect(f, lo, hi)
