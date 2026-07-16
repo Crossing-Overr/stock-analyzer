@@ -2,6 +2,7 @@ import streamlit as st
 
 from core.data import (load_ticker, fmt_large, fmt_pct, fmt_mult)
 from core.dcf import run_dcf
+from core.dcf_analysis import implied_growth, implied_return, sensitivity_grid
 from core.favorites import add_favorite
 from ui.theme import inject_theme
 from ui.sidebar import render_sidebar
@@ -87,7 +88,9 @@ with st.expander("ℹ️ О компании"):
 
 # ─── DCF ────────────────────────────────────────────────────────────────────
 C.section_header("🔮 DCF — три сценария")
-fcf_base = td.fcf_normalized
+# База FCF: с поправкой на SBC (если галочка и данные есть) или без неё
+use_sbc = params.subtract_sbc and td.fcf_normalized_ex_sbc is not None
+fcf_base = td.fcf_normalized_ex_sbc if use_sbc else td.fcf_normalized
 if not td.shares_outstanding:
     st.warning("Недостаточно данных для DCF (нет количества акций).")
 elif not fcf_base or fcf_base <= 0:
@@ -110,14 +113,35 @@ else:
 
     # Показываем, какая база FCF использована (медиана лет vs единичный TTM).
     base_note = f"База FCF: {fmt_large(fcf_base)}"
+    if use_sbc:
+        base_note += f" (за вычетом SBC {fmt_large(td.sbc_normalized)})"
+    elif params.subtract_sbc:
+        base_note += " (данных по SBC нет)"
     if td.free_cashflow and abs(fcf_base - td.free_cashflow) > 0.05 * abs(td.free_cashflow):
-        base_note += f" (медиана за годы; TTM был {fmt_large(td.free_cashflow)})"
+        base_note += f" · TTM был {fmt_large(td.free_cashflow)}"
     st.caption((f"{base_note} · WACC: {params.wacc*100:.1f}% · Терм. рост: "
                 f"{params.terminal_growth*100:.1f}% · Горизонт: {params.years} лет · "
                 f"Чистый долг: {fmt_large(td.net_debt)}").replace("$", "\\$"))
     st.caption("⚠️ Оценка по текущему FCF: быстрорастущие компании (AMZN, NVDA) "
                "обычно выглядят «дорогими» — модель не закладывает будущий рост "
                "маржи. Чистый долг из Yahoo включает лизинг, что занижает оценку.")
+
+    # ─── Реверс-DCF: что заложено в цену ────────────────────────────────────
+    C.section_header("🔍 Что заложено в цену")
+    ig = implied_growth(
+        price=td.price, fcf_base=fcf_base, shares=td.shares_outstanding,
+        net_debt=td.net_debt, wacc=params.wacc,
+        terminal_growth=params.terminal_growth, years=params.years,
+    )
+    ir = implied_return(
+        price=td.price, fcf_base=fcf_base, shares=td.shares_outstanding,
+        net_debt=td.net_debt, growth_start=params.growth_rates["base"],
+        terminal_growth=params.terminal_growth, years=params.years,
+    )
+    C.reverse_dcf_cards(ig, ir, params.terminal_growth, td.revenue_growth)
+    st.caption("Обратная задача: какой рост и какая доходность должны быть, "
+               "чтобы справедливая цена совпала с рыночной. Двигай ползунки — "
+               "цифры пересчитываются.")
 
     max_tv = max(r.tv_share for r in dcf.values())
     if max_tv > 0.75:
@@ -129,6 +153,22 @@ else:
     C.dcf_waterfall(dcf["base"], params.years)
     st.markdown("##### Справедливая цена vs текущая")
     C.dcf_fair_value(dcf, td.price)
+
+    with st.expander("📐 Таблица чувствительности (WACC × терминальный рост)"):
+        mode_label = st.radio("Показывать", ["Апсайд %", "Справедливая цена $"],
+                              horizontal=True, key="sens_mode")
+        grid = sensitivity_grid(
+            fcf_base=fcf_base, price=td.price, shares=td.shares_outstanding,
+            net_debt=td.net_debt, growth_start=params.growth_rates["base"],
+            wacc=params.wacc, terminal_growth=params.terminal_growth,
+            years=params.years,
+        )
+        if grid is None:
+            st.caption("Недостаточно данных для расчёта.")
+        else:
+            C.sensitivity_table(grid, "price" if mode_label.startswith("Справ") else "upside")
+            st.caption("Жёлтой рамкой отмечены твои текущие настройки. "
+                       "«—» — там терминальный рост ≥ WACC, модель Гордона неприменима.")
 
 C.section_header("📅 История финансов")
 C.financials_history(td.financials)
