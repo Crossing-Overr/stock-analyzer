@@ -1,3 +1,4 @@
+from dataclasses import dataclass
 from typing import Optional
 
 from core.dcf import run_dcf
@@ -6,6 +7,11 @@ from core.dcf import run_dcf
 GROWTH_LO = -0.50
 GROWTH_HI = 1.00
 RETURN_HI = 0.50
+
+# Сетка чувствительности WACC x терминальный рост
+WACC_STEP = 0.01     # 1 п.п.
+TG_STEP = 0.005      # 0.5 п.п.
+GRID_RADIUS = 2      # ±2 шага → сетка 5×5
 
 
 def _intrinsic(fcf_base, growth_start, wacc, terminal_growth, years, shares, net_debt) -> float:
@@ -94,3 +100,50 @@ def implied_return(price, fcf_base, shares, net_debt, growth_start, terminal_gro
         return _intrinsic(fcf_base, growth_start, r, terminal_growth, years, shares, net_debt) - price
 
     return _bisect(f, lo, hi)
+
+
+@dataclass
+class SensitivityCell:
+    wacc: float
+    terminal_growth: float
+    intrinsic: Optional[float]   # None, если терм. рост >= WACC (модель Гордона неприменима)
+    upside: Optional[float]      # % к текущей цене
+    is_current: bool             # ячейка текущих настроек ползунков
+
+
+@dataclass
+class SensitivityGrid:
+    waccs: list              # значения по столбцам
+    terminal_growths: list   # значения по строкам
+    cells: list              # list[list[SensitivityCell]], строки — по terminal_growths
+
+
+def sensitivity_grid(fcf_base, price, shares, net_debt, growth_start,
+                     wacc, terminal_growth, years,
+                     wacc_step: float = WACC_STEP, tg_step: float = TG_STEP,
+                     radius: int = GRID_RADIUS) -> Optional[SensitivityGrid]:
+    """
+    Сетка «WACC × терминальный рост» вокруг текущих настроек. Рост FCF берётся
+    базовый (Base-сценарий) и не варьируется — меняются только ставки.
+    None, если DCF в принципе неприменим (FCF ≤ 0 и т.п.).
+    """
+    if not _inputs_valid(price, fcf_base, shares):
+        return None
+
+    waccs = [wacc + i * wacc_step for i in range(-radius, radius + 1)]
+    tgs = [terminal_growth + i * tg_step for i in range(-radius, radius + 1)]
+
+    rows = []
+    for tg in tgs:
+        row = []
+        for w in waccs:
+            is_current = (abs(w - wacc) < 1e-9) and (abs(tg - terminal_growth) < 1e-9)
+            if tg >= w:
+                row.append(SensitivityCell(w, tg, None, None, is_current))
+                continue
+            iv = _intrinsic(fcf_base, growth_start, w, tg, years, shares, net_debt)
+            upside = (iv - price) / price * 100 if iv > 0 else None
+            row.append(SensitivityCell(w, tg, iv, upside, is_current))
+        rows.append(row)
+
+    return SensitivityGrid(waccs=waccs, terminal_growths=tgs, cells=rows)
