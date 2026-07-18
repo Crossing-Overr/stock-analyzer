@@ -1,7 +1,7 @@
 import math
 import pandas as pd
 import pytest
-from core.data import safe, fmt_large, fmt_pct, fmt_mult, TickerData, subtract_series
+from core.data import safe, fmt_large, fmt_pct, fmt_mult, TickerData, subtract_series, tnx_to_rate
 
 def test_safe_returns_default_for_none_nan_empty():
     assert safe({"x": None}, "x", "D") == "D"
@@ -112,3 +112,26 @@ def test_fcf_ex_sbc_none_without_cashflow():
     td = TickerData.from_info("X", {"currentPrice": 5.0, "freeCashflow": 7.0}, None, None)
     assert td.fcf_normalized == 7.0                  # откат на trailing
     assert td.fcf_normalized_ex_sbc is None
+
+
+def test_tnx_to_rate_converts_percent_to_fraction():
+    # ^TNX котируется в процентах: 4.541 → 0.04541
+    assert tnx_to_rate(4.541) == pytest.approx(0.04541)
+
+
+def test_tnx_to_rate_rejects_garbage():
+    assert tnx_to_rate(None) is None
+    assert tnx_to_rate(0.5) is None     # 0.005 — ниже санитарного минимума 1%
+    assert tnx_to_rate(45.0) is None    # 0.45 — выше санитарного максимума 10%
+
+
+def test_dcf_fcf_base_selection():
+    cf = _cashflow({"Free Cash Flow": [30.0, 20.0, 10.0],
+                    "Stock Based Compensation": [3.0, 2.0, 1.0]})
+    td = TickerData.from_info("X", {"currentPrice": 5.0}, None, None, cf)
+    assert td.dcf_fcf_base(subtract_sbc=True) == 18.0    # ex-SBC доступен
+    assert td.dcf_fcf_base(subtract_sbc=False) == 20.0   # галочка выключена
+
+    cf2 = _cashflow({"Free Cash Flow": [30.0, 20.0, 10.0]})
+    td2 = TickerData.from_info("X", {"currentPrice": 5.0}, None, None, cf2)
+    assert td2.dcf_fcf_base(subtract_sbc=True) == 20.0   # SBC нет → обычная база

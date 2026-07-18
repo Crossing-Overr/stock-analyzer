@@ -88,6 +88,23 @@ def subtract_series(a, b) -> list:
     return out
 
 
+# Санитарные границы для доходности 10-леток (^TNX котируется в процентах)
+_RF_SANE_MIN, _RF_SANE_MAX = 0.01, 0.10
+
+
+def tnx_to_rate(price) -> Optional[float]:
+    """^TNX (4.541 = 4.541%) → дробь 0.04541. Мусор/вне диапазона → None."""
+    if price is None:
+        return None
+    try:
+        rate = float(price) / 100.0
+    except (TypeError, ValueError):
+        return None
+    if not (_RF_SANE_MIN <= rate <= _RF_SANE_MAX):
+        return None
+    return rate
+
+
 # ─── TickerData ─────────────────────────────────────────────────────────────
 @dataclass
 class TickerData:
@@ -154,6 +171,12 @@ class TickerData:
         if self.price and self.previous_close:
             return (self.price - self.previous_close) / self.previous_close * 100
         return 0.0
+
+    def dcf_fcf_base(self, subtract_sbc: bool) -> Optional[float]:
+        """База FCF для DCF: ex-SBC, если попросили и данные есть, иначе обычная."""
+        if subtract_sbc and self.fcf_normalized_ex_sbc is not None:
+            return self.fcf_normalized_ex_sbc
+        return self.fcf_normalized
 
     @staticmethod
     def _annual_row(statement, keys) -> list:
@@ -267,3 +290,21 @@ def load_ticker(symbol: str) -> Optional[TickerData]:
         return td if td.has_price() else None
     except Exception:
         return None
+
+
+@st.cache_data(ttl=3600, show_spinner=False)
+def load_risk_free():
+    """
+    Живая доходность 10-летних гособлигаций США из ^TNX.
+    Возвращает (ставка, live): live=False → сработал фолбэк RF_DEFAULT.
+    """
+    from core.wacc import RF_DEFAULT
+    try:
+        info = yf.Ticker("^TNX").info
+        rate = tnx_to_rate(safe(info, "regularMarketPrice")
+                           or safe(info, "previousClose"))
+        if rate is not None:
+            return rate, True
+    except Exception:
+        pass
+    return RF_DEFAULT, False
