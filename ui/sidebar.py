@@ -5,7 +5,8 @@ import streamlit as st
 @dataclass
 class DcfParams:
     years: int
-    wacc: float
+    wacc: float          # значение ползунка — используется в ручном режиме
+    wacc_auto: bool      # True → страницы считают WACC по CAPM (бета тикера)
     terminal_growth: float
     growth_rates: dict   # {"bear":..,"base":..,"bull":..}
     subtract_sbc: bool
@@ -17,8 +18,19 @@ def render_sidebar() -> DcfParams:
         st.markdown("---")
         st.markdown("### ⚙️ DCF параметры")
         # key= обязателен: иначе значения сбрасываются при смене вкладки
-        years = st.slider("Горизонт прогноза (лет)", 3, 10, 5, key="dcf_years")
-        wacc = st.slider("WACC (%)", 5.0, 20.0, 10.0, 0.5, key="dcf_wacc") / 100
+        years = st.slider("Горизонт прогноза (лет)", 3, 15, 10, key="dcf_years")
+
+        wacc_auto = st.checkbox(
+            "WACC автоматически (CAPM)", value=True, key="dcf_wacc_auto",
+            help="Ставка из беты тикера: rf(10-летки) + β × 5%, с учётом долга. "
+                 "У каждой компании — своя. Сними галочку, чтобы задать вручную.",
+        )
+        if wacc_auto:
+            st.caption("WACC считается по бете тикера — см. подпись под DCF.")
+            wacc = st.session_state.get("dcf_wacc", 10.0) / 100
+        else:
+            wacc = st.slider("WACC (%)", 5.0, 20.0, 10.0, 0.5, key="dcf_wacc") / 100
+
         terminal_growth = st.slider("Терминальный рост (%)", 1.0, 5.0, 2.5, 0.25,
                                     key="dcf_tg") / 100
 
@@ -39,7 +51,8 @@ def render_sidebar() -> DcfParams:
         st.caption("Данные: Yahoo Finance (yfinance)")
 
     return DcfParams(
-        years=years, wacc=wacc, terminal_growth=terminal_growth,
+        years=years, wacc=wacc, wacc_auto=wacc_auto,
+        terminal_growth=terminal_growth,
         growth_rates={"bear": bear_g, "base": base_g, "bull": bull_g},
         subtract_sbc=subtract_sbc,
     )
