@@ -1,9 +1,10 @@
 import streamlit as st
 
-from core.data import load_ticker
+from core.data import load_ticker, load_risk_free
 from core.dcf import dcf_upside_base
 from core.compare import build_comparison_table
 from core.favorites import get_favorites
+from core.wacc import effective_wacc
 from ui.theme import inject_theme
 from ui.sidebar import render_sidebar
 
@@ -37,14 +38,16 @@ if missing:
 if not tickers:
     st.stop()
 
-# апсайд Base-сценария для каждого (по нормализованному FCF; None если непригодно)
-base_upsides = {
-    td.symbol: dcf_upside_base(
-        td.fcf_normalized, td.price, td.shares_outstanding, td.net_debt,
-        params.growth_rates, params.wacc, params.terminal_growth, params.years,
+# апсайд Base-сценария: SBC-консистентная база + per-ticker CAPM-WACC
+rf, _rf_live = load_risk_free()
+base_upsides = {}
+for td in tickers:
+    w = effective_wacc(td.beta, rf, td.market_cap, td.total_debt,
+                       auto=params.wacc_auto, manual=params.wacc)
+    base_upsides[td.symbol] = dcf_upside_base(
+        td.dcf_fcf_base(params.subtract_sbc), td.price, td.shares_outstanding,
+        td.net_debt, params.growth_rates, w, params.terminal_growth, params.years,
     )
-    for td in tickers
-}
 
 table = build_comparison_table(tickers, base_upsides)
 
@@ -70,8 +73,9 @@ border:1px solid #313244;border-radius:12px'>
 </table>
 """, unsafe_allow_html=True)
 
+wacc_txt = "CAPM по бете каждого тикера" if params.wacc_auto else f"{params.wacc*100:.1f}%"
 st.caption(f"Апсайд считается по Base-сценарию DCF при текущих слайдерах "
-           f"(WACC {params.wacc*100:.1f}%, горизонт {params.years} лет). "
+           f"(WACC: {wacc_txt}, горизонт {params.years} лет). "
            "Зелёным — лучшее в строке, красным — худшее.")
 st.markdown("---")
 st.caption("⚠️ Только для образовательных целей. Не является инвестиционной рекомендацией.")

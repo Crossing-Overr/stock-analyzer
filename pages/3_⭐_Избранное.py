@@ -1,14 +1,16 @@
 import streamlit as st
 
-from core.data import load_ticker, fmt_large
+from core.data import load_ticker, fmt_large, load_risk_free
 from core.dcf import dcf_upside_base
 from core.favorites import get_favorites, add_favorite, remove_favorite
+from core.wacc import effective_wacc
 from ui.theme import inject_theme
 from ui.sidebar import render_sidebar
 
 st.set_page_config(page_title="Избранное · Stock Analysator", page_icon="⭐", layout="wide")
 inject_theme()
 params = render_sidebar()
+rf, _rf_live = load_risk_free()
 
 st.markdown("# ⭐ Избранное")
 st.caption("Избранное хранится на время сессии (пока открыта вкладка). "
@@ -37,9 +39,11 @@ for sym in favorites:
         c_name.markdown(f"**{sym}** · {td.name}")
         c_price.metric("Цена", f"{td.price:.2f}")
         c_chg.metric("Δ день", f"{arrow} {abs(td.day_change_pct):.2f}%")
+        w = effective_wacc(td.beta, rf, td.market_cap, td.total_debt,
+                           auto=params.wacc_auto, manual=params.wacc)
         up = dcf_upside_base(
-            td.fcf_normalized, td.price, td.shares_outstanding, td.net_debt,
-            params.growth_rates, params.wacc, params.terminal_growth, params.years,
+            td.dcf_fcf_base(params.subtract_sbc), td.price, td.shares_outstanding,
+            td.net_debt, params.growth_rates, w, params.terminal_growth, params.years,
         )
         c_up.metric("Апсайд Base", f"{up:+.1f}%" if up is not None else "N/A")
     if c_del.button("🗑", key=f"del_{sym}"):
