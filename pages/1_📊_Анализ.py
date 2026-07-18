@@ -1,9 +1,10 @@
 import streamlit as st
 
-from core.data import (load_ticker, fmt_large, fmt_pct, fmt_mult)
+from core.data import (load_ticker, fmt_large, fmt_pct, fmt_mult, load_risk_free)
 from core.dcf import run_dcf
 from core.dcf_analysis import implied_growth, implied_return, sensitivity_grid
 from core.favorites import add_favorite
+from core.wacc import estimate_wacc, ERP
 from ui.theme import inject_theme
 from ui.sidebar import render_sidebar
 from ui import components as C
@@ -91,6 +92,13 @@ C.section_header("🔮 DCF — три сценария")
 # База FCF: с поправкой на SBC (если галочка и данные есть) или без неё
 use_sbc = params.subtract_sbc and td.fcf_normalized_ex_sbc is not None
 fcf_base = td.fcf_normalized_ex_sbc if use_sbc else td.fcf_normalized
+
+# ─── Действующий WACC: CAPM по бете (auto) или ползунок ─────────────────────
+rf, rf_live = load_risk_free()
+wacc_est = (estimate_wacc(td.beta, rf, td.market_cap, td.total_debt)
+            if params.wacc_auto else None)
+eff_wacc = wacc_est.wacc if wacc_est is not None else params.wacc
+
 if not td.shares_outstanding:
     st.warning("Недостаточно данных для DCF (нет количества акций).")
 elif not fcf_base or fcf_base <= 0:
@@ -104,7 +112,7 @@ elif not fcf_base or fcf_base <= 0:
 else:
     dcf = run_dcf(
         fcf_base=fcf_base, growth_rates=params.growth_rates,
-        wacc=params.wacc, terminal_growth=params.terminal_growth,
+        wacc=eff_wacc, terminal_growth=params.terminal_growth,
         years=params.years, shares=td.shares_outstanding, net_debt=td.net_debt,
     )
     cols = st.columns(3)
@@ -119,9 +127,21 @@ else:
         base_note += " (данных по SBC нет)"
     if td.free_cashflow and abs(fcf_base - td.free_cashflow) > 0.05 * abs(td.free_cashflow):
         base_note += f" · TTM был {fmt_large(td.free_cashflow)}"
-    st.caption((f"{base_note} · WACC: {params.wacc*100:.1f}% · Терм. рост: "
+    st.caption((f"{base_note} · WACC: {eff_wacc*100:.1f}% · Терм. рост: "
                 f"{params.terminal_growth*100:.1f}% · Горизонт: {params.years} лет · "
                 f"Чистый долг: {fmt_large(td.net_debt)}").replace("$", "\\$"))
+    if wacc_est is not None:
+        wacc_note = (f"WACC {eff_wacc*100:.1f}% = CAPM: rf {wacc_est.risk_free*100:.1f}%"
+                     f" + β {wacc_est.beta_used:.2f} × ERP {ERP*100:.0f}%")
+        if wacc_est.beta_used != wacc_est.beta_raw:
+            wacc_note += f" (бета {wacc_est.beta_raw:.2f} ограничена)"
+        if wacc_est.debt_weight > 0.01:
+            wacc_note += " · долг учтён"
+        if not rf_live:
+            wacc_note += " · rf по умолчанию (нет ^TNX)"
+        st.caption(wacc_note)
+    elif params.wacc_auto:
+        st.caption(f"WACC {eff_wacc*100:.1f}% — ползунок (нет беты для CAPM).")
     st.caption("⚠️ Оценка по текущему FCF: быстрорастущие компании (AMZN, NVDA) "
                "обычно выглядят «дорогими» — модель не закладывает будущий рост "
                "маржи. Чистый долг из Yahoo включает лизинг, что занижает оценку.")
@@ -130,7 +150,7 @@ else:
     C.section_header("🔍 Что заложено в цену")
     ig = implied_growth(
         price=td.price, fcf_base=fcf_base, shares=td.shares_outstanding,
-        net_debt=td.net_debt, wacc=params.wacc,
+        net_debt=td.net_debt, wacc=eff_wacc,
         terminal_growth=params.terminal_growth, years=params.years,
     )
     ir = implied_return(
@@ -160,7 +180,7 @@ else:
         grid = sensitivity_grid(
             fcf_base=fcf_base, price=td.price, shares=td.shares_outstanding,
             net_debt=td.net_debt, growth_start=params.growth_rates["base"],
-            wacc=params.wacc, terminal_growth=params.terminal_growth,
+            wacc=eff_wacc, terminal_growth=params.terminal_growth,
             years=params.years,
         )
         if grid is None:
@@ -174,4 +194,7 @@ C.section_header("📅 История финансов")
 C.financials_history(td.financials)
 
 st.markdown("---")
+if td.history is not None and not td.history.empty:
+    _ts = td.history.index[-1]
+    st.caption(f"Данные: Yahoo Finance · цена на {_ts.strftime('%d.%m.%Y %H:%M')}")
 st.caption("⚠️ Только для образовательных целей. Не является инвестиционной рекомендацией.")
