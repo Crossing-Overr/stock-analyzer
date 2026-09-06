@@ -13,7 +13,8 @@ st.set_page_config(page_title="Анализ · Stock Analysator", page_icon="�
 inject_theme()
 params = render_sidebar()
 
-ticker = st.text_input("Тикер", value="AAPL",
+_prefill = st.session_state.pop("ticker_prefill", "AAPL")
+ticker = st.text_input("Тикер", value=_prefill,
                        placeholder="AAPL, MSFT, NVDA...").upper().strip()
 if not ticker:
     st.info("Введи тикер выше")
