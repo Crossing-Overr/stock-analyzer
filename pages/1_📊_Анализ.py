@@ -30,66 +30,12 @@ if td is None:
 # ─── Хедер + кнопка в избранное ─────────────────────────────────────────────
 head, fav = st.columns([6, 1])
 with head:
-    st.markdown(f"# {td.name} &nbsp; `{td.symbol}`")
-    site = f" · [{td.website}]({td.website})" if td.website else ""
-    st.markdown(f"**{td.sector}** · {td.industry} · {td.country}{site}")
+    C.ticker_header(td)
 with fav:
     if st.button("⭐ В избранное", use_container_width=True):
         add_favorite(td.symbol)
         st.toast(f"{td.symbol} добавлен в избранное")
 
-st.markdown("---")
-
-# ─── Цена + быстрые метрики ─────────────────────────────────────────────────
-c1, c2, c3, c4, c5 = st.columns(5)
-arrow = "▲" if td.day_change_pct >= 0 else "▼"
-c1.metric("Цена", f"{td.price:.2f} {td.currency}", f"{arrow} {abs(td.day_change_pct):.2f}%")
-c2.metric("Рын. капитализация", fmt_large(td.market_cap))
-c3.metric("EV", fmt_large(td.enterprise_value))
-c4.metric("52w High", f"{td.week52_high:.2f}" if td.week52_high else "N/A")
-c5.metric("52w Low", f"{td.week52_low:.2f}" if td.week52_low else "N/A")
-
-C.price_chart(td.history)
-
-# ─── Мультипликаторы ────────────────────────────────────────────────────────
-C.section_header("📊 Мультипликаторы")
-m = st.columns(8)
-m[0].metric("P/E", fmt_mult(td.trailing_pe))
-m[1].metric("Forward P/E", fmt_mult(td.forward_pe))
-m[2].metric("P/S", fmt_mult(td.price_to_sales))
-m[3].metric("P/B", fmt_mult(td.price_to_book))
-m[4].metric("EV/EBITDA", fmt_mult(td.ev_to_ebitda))
-m[5].metric("EV/Revenue", fmt_mult(td.ev_to_revenue))
-m[6].metric("PEG", fmt_mult(td.peg))
-m[7].metric("Div. Yield", fmt_pct(td.dividend_yield))
-
-# ─── Финансы TTM ────────────────────────────────────────────────────────────
-C.section_header("💰 Финансовые показатели (TTM)")
-f = st.columns(6)
-f[0].metric("Выручка", fmt_large(td.total_revenue))
-f[1].metric("Валовая прибыль", fmt_large(td.gross_profits))
-f[2].metric("EBITDA", fmt_large(td.ebitda))
-f[3].metric("Чистая прибыль", fmt_large(td.net_income))
-f[4].metric("FCF", fmt_large(td.free_cashflow))
-f[5].metric("Долг", fmt_large(td.total_debt))
-f2 = st.columns(6)
-f2[0].metric("Gross Margin", fmt_pct(td.gross_margins))
-f2[1].metric("EBITDA Margin", fmt_pct(td.ebitda_margins))
-f2[2].metric("Net Margin", fmt_pct(td.profit_margins))
-f2[3].metric("ROE", fmt_pct(td.roe))
-f2[4].metric("ROA", fmt_pct(td.roa))
-f2[5].metric("Рост выручки", fmt_pct(td.revenue_growth))
-
-with st.expander("ℹ️ О компании"):
-    st.write(td.description)
-    d = st.columns(4)
-    d[0].metric("Сотрудников", f"{td.employees:,}" if td.employees else "N/A")
-    d[1].metric("Акций в обращ.", fmt_large(td.shares_outstanding))
-    d[2].metric("Beta", fmt_mult(td.beta, ""))
-    d[3].metric("Short Float %", fmt_pct(td.short_percent_float))
-
-# ─── DCF ────────────────────────────────────────────────────────────────────
-C.section_header("🔮 DCF — три сценария")
 # База FCF: с поправкой на SBC (если галочка и данные есть) или без неё
 use_sbc = params.subtract_sbc and td.fcf_normalized_ex_sbc is not None
 fcf_base = td.fcf_normalized_ex_sbc if use_sbc else td.fcf_normalized
@@ -101,6 +47,7 @@ eff_wacc = wacc_est.wacc if wacc_est is not None else params.wacc
 
 if not td.shares_outstanding:
     st.warning("Недостаточно данных для DCF (нет количества акций).")
+    dcf = None
 elif not fcf_base or fcf_base <= 0:
     st.info((
         f"**DCF по свободному денежному потоку неприменим.** У «{td.symbol}» "
@@ -109,45 +56,15 @@ elif not fcf_base or fcf_base <= 0:
         "Компанию, сжигающую кэш, нельзя оценить простой FCF-моделью — "
         "справедливая цена не рассчитывается."
     ).replace("$", "\\$"))
+    dcf = None
 else:
     dcf = run_dcf(
         fcf_base=fcf_base, growth_rates=params.growth_rates,
         wacc=eff_wacc, terminal_growth=params.terminal_growth,
         years=params.years, shares=td.shares_outstanding, net_debt=td.net_debt,
     )
-    cols = st.columns(3)
-    for col, name in zip(cols, ["bear", "base", "bull"]):
-        C.scenario_card(col, name, dcf[name], td.price)
+    C.verdict_card(dcf, td.price, eff_wacc)
 
-    # Показываем, какая база FCF использована (медиана лет vs единичный TTM).
-    base_note = f"База FCF: {fmt_large(fcf_base)}"
-    if use_sbc:
-        base_note += f" (за вычетом SBC {fmt_large(td.sbc_normalized)})"
-    elif params.subtract_sbc:
-        base_note += " (данных по SBC нет)"
-    if td.free_cashflow and abs(fcf_base - td.free_cashflow) > 0.05 * abs(td.free_cashflow):
-        base_note += f" · TTM был {fmt_large(td.free_cashflow)}"
-    st.caption((f"{base_note} · WACC: {eff_wacc*100:.1f}% · Терм. рост: "
-                f"{params.terminal_growth*100:.1f}% · Горизонт: {params.years} лет · "
-                f"Чистый долг: {fmt_large(td.net_debt)}").replace("$", "\\$"))
-    if wacc_est is not None:
-        wacc_note = (f"WACC {eff_wacc*100:.1f}% = CAPM: rf {wacc_est.risk_free*100:.1f}%"
-                     f" + β {wacc_est.beta_used:.2f} × ERP {ERP*100:.0f}%")
-        if wacc_est.beta_used != wacc_est.beta_raw:
-            wacc_note += f" (бета {wacc_est.beta_raw:.2f} ограничена)"
-        if wacc_est.debt_weight > 0.01:
-            wacc_note += " · долг учтён"
-        if not rf_live:
-            wacc_note += " · rf по умолчанию (нет ^TNX)"
-        st.caption(wacc_note)
-    elif params.wacc_auto:
-        st.caption(f"WACC {eff_wacc*100:.1f}% — ползунок (нет беты для CAPM).")
-    st.caption("⚠️ Оценка по текущему FCF: быстрорастущие компании (AMZN, NVDA) "
-               "обычно выглядят «дорогими» — модель не закладывает будущий рост "
-               "маржи. Чистый долг из Yahoo включает лизинг, что занижает оценку.")
-
-    # ─── Реверс-DCF: что заложено в цену ────────────────────────────────────
-    C.section_header("🔍 Что заложено в цену")
     ig = implied_growth(
         price=td.price, fcf_base=fcf_base, shares=td.shares_outstanding,
         net_debt=td.net_debt, wacc=eff_wacc,
@@ -158,23 +75,85 @@ else:
         net_debt=td.net_debt, growth_start=params.growth_rates["base"],
         terminal_growth=params.terminal_growth, years=params.years,
     )
-    C.reverse_dcf_cards(ig, ir, params.terminal_growth, td.revenue_growth)
-    st.caption("Обратная задача: какой рост и какая доходность должны быть, "
-               "чтобы справедливая цена совпала с рыночной. Двигай ползунки — "
-               "цифры пересчитываются.")
+    C.reverse_dcf_cards(ig, ir, params.terminal_growth, td.revenue_growth, rf)
 
-    max_tv = max(r.tv_share for r in dcf.values())
-    if max_tv > 0.75:
-        st.warning(f"⚠️ Терминальная стоимость даёт до {max_tv*100:.0f}% оценки — "
-                   "результат сильно зависит от WACC и терминального роста. "
-                   "Увеличь горизонт или снизь стартовый рост.")
+    base_note = f"База FCF: {fmt_large(fcf_base)}"
+    if use_sbc:
+        base_note += f" (за вычетом SBC {fmt_large(td.sbc_normalized)})"
+    elif params.subtract_sbc:
+        base_note += " (данных по SBC нет)"
+    wacc_note = ""
+    if wacc_est is not None:
+        wacc_note = (f" · WACC {eff_wacc*100:.1f}% = rf {wacc_est.risk_free*100:.1f}%"
+                     f" + β {wacc_est.beta_used:.2f} × ERP {ERP*100:.0f}%")
+    st.caption((f"{base_note}{wacc_note} · горизонт {params.years} лет · "
+                f"терм. рост {params.terminal_growth*100:.1f}%").replace("$", "\\$"))
 
-    st.markdown("##### Структура стоимости (Base сценарий)")
-    C.dcf_waterfall(dcf["base"], params.years)
-    st.markdown("##### Справедливая цена vs текущая")
-    C.dcf_fair_value(dcf, td.price)
+C.price_chart(td.history)
 
-    with st.expander("📐 Таблица чувствительности (WACC × терминальный рост)"):
+C.section_header("Ключевые метрики")
+C.metric_rows([
+    ("P/E · Forward P/E", f"{fmt_mult(td.trailing_pe)} · {fmt_mult(td.forward_pe)}"),
+    ("EV/EBITDA", fmt_mult(td.ev_to_ebitda)),
+    ("Чистая маржа", fmt_pct(td.profit_margins)),
+    ("ROE", fmt_pct(td.roe)),
+    ("Рост выручки", fmt_pct(td.revenue_growth)),
+    ("Капитализация", fmt_large(td.market_cap)),
+])
+
+with st.expander("📊 Все мультипликаторы"):
+    m = st.columns(4)
+    m[0].metric("P/E", fmt_mult(td.trailing_pe))
+    m[1].metric("Forward P/E", fmt_mult(td.forward_pe))
+    m[2].metric("P/S", fmt_mult(td.price_to_sales))
+    m[3].metric("P/B", fmt_mult(td.price_to_book))
+    m2 = st.columns(4)
+    m2[0].metric("EV/EBITDA", fmt_mult(td.ev_to_ebitda))
+    m2[1].metric("EV/Revenue", fmt_mult(td.ev_to_revenue))
+    m2[2].metric("PEG", fmt_mult(td.peg))
+    m2[3].metric("Div. Yield", fmt_pct(td.dividend_yield))
+    d = st.columns(4)
+    d[0].metric("52w High", f"{td.week52_high:.2f}" if td.week52_high else "N/A")
+    d[1].metric("52w Low", f"{td.week52_low:.2f}" if td.week52_low else "N/A")
+    d[2].metric("EV", fmt_large(td.enterprise_value))
+    d[3].metric("Beta", fmt_mult(td.beta, ""))
+
+with st.expander("💰 Финансы (TTM)"):
+    f = st.columns(4)
+    f[0].metric("Выручка", fmt_large(td.total_revenue))
+    f[1].metric("Валовая прибыль", fmt_large(td.gross_profits))
+    f[2].metric("EBITDA", fmt_large(td.ebitda))
+    f[3].metric("Чистая прибыль", fmt_large(td.net_income))
+    f2 = st.columns(4)
+    f2[0].metric("FCF", fmt_large(td.free_cashflow))
+    f2[1].metric("Долг", fmt_large(td.total_debt))
+    f2[2].metric("Gross Margin", fmt_pct(td.gross_margins))
+    f2[3].metric("ROA", fmt_pct(td.roa))
+
+with st.expander("ℹ️ О компании"):
+    st.write(td.description)
+    d2 = st.columns(3)
+    d2[0].metric("Сотрудников", f"{td.employees:,}" if td.employees else "N/A")
+    d2[1].metric("Акций в обращ.", fmt_large(td.shares_outstanding))
+    d2[2].metric("Short Float %", fmt_pct(td.short_percent_float))
+
+if dcf is not None:
+    with st.expander("🔮 Детали DCF — сценарии, структура, чувствительность"):
+        cols = st.columns(3)
+        for col, name in zip(cols, ["bear", "base", "bull"]):
+            C.scenario_card(col, name, dcf[name], td.price)
+
+        max_tv = max(r.tv_share for r in dcf.values())
+        if max_tv > 0.75:
+            st.warning(f"⚠️ Терминальная стоимость даёт до {max_tv*100:.0f}% оценки — "
+                       "результат сильно зависит от WACC и терминального роста.")
+
+        st.markdown("##### Структура стоимости (Base)")
+        C.dcf_waterfall(dcf["base"], params.years)
+        st.markdown("##### Справедливая цена vs текущая")
+        C.dcf_fair_value(dcf, td.price)
+
+        st.markdown("##### Чувствительность (WACC × терминальный рост)")
         mode_label = st.radio("Показывать", ["Апсайд %", "Справедливая цена $"],
                               horizontal=True, key="sens_mode")
         grid = sensitivity_grid(
@@ -187,11 +166,11 @@ else:
             st.caption("Недостаточно данных для расчёта.")
         else:
             C.sensitivity_table(grid, "price" if mode_label.startswith("Справ") else "upside")
-            st.caption("Жёлтой рамкой отмечены твои текущие настройки. "
-                       "«—» — там терминальный рост ≥ WACC, модель Гордона неприменима.")
+            st.caption("Жёлтой рамкой отмечены текущие настройки. «—» — терминальный "
+                       "рост ≥ WACC, модель Гордона неприменима.")
 
-C.section_header("📅 История финансов")
-C.financials_history(td.financials)
+with st.expander("📅 История финансов"):
+    C.financials_history(td.financials)
 
 st.markdown("---")
 if td.history is not None and not td.history.empty:
