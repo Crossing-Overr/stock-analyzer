@@ -13,7 +13,8 @@ class ScenarioResult:
     tv_share: float
 
 
-def run_dcf(fcf_base, growth_rates, wacc, terminal_growth, years, shares, net_debt):
+def run_dcf(fcf_base, growth_rates, wacc, terminal_growth, years, shares, net_debt,
+            terminal_multiple=None):
     """
     2-фазная DCF с линейным затуханием роста.
 
@@ -23,6 +24,10 @@ def run_dcf(fcf_base, growth_rates, wacc, terminal_growth, years, shares, net_de
 
     growth_rates: dict {"bear": float, "base": float, "bull": float} —
         стартовые годовые темпы роста FCF.
+    terminal_multiple: если задан (>0) — терминальная стоимость считается как
+        FCF последнего года × мультипликатор (подход Карлина), а не по формуле
+        Гордона. Полезно, потому что Гордон при WACC 10%/росте 2.5% эквивалентен
+        всего ≈13.5x FCF, тогда как качественные компании торгуются много дороже.
     Возвращает dict {name: ScenarioResult}.
     """
     # Модель Гордона требует wacc > terminal_growth. Защищаемся от деления
@@ -43,8 +48,12 @@ def run_dcf(fcf_base, growth_rates, wacc, terminal_growth, years, shares, net_de
             fcf = fcf * (1 + g)
             fcfs_pv.append(fcf / (1 + wacc) ** y)
 
-        terminal_fcf = fcf * (1 + eff_terminal)
-        terminal_value = terminal_fcf / (wacc - eff_terminal)
+        if terminal_multiple and terminal_multiple > 0:
+            # Терминал по мультипликатору: «во сколько FCF оценят компанию в конце»
+            terminal_value = fcf * terminal_multiple
+        else:
+            terminal_fcf = fcf * (1 + eff_terminal)
+            terminal_value = terminal_fcf / (wacc - eff_terminal)
         pv_terminal = terminal_value / (1 + wacc) ** years
 
         enterprise_value = sum(fcfs_pv) + pv_terminal
@@ -66,7 +75,8 @@ def run_dcf(fcf_base, growth_rates, wacc, terminal_growth, years, shares, net_de
 
 
 def dcf_upside_base(fcf_base, price, shares, net_debt,
-                    growth_rates, wacc, terminal_growth, years):
+                    growth_rates, wacc, terminal_growth, years,
+                    terminal_multiple=None):
     """
     Апсайд Base-сценария в % ((справедливая - текущая)/текущая), либо None если
     DCF неприменим: нет/отрицательный FCF, нет акций или цены, либо расчётная
@@ -76,6 +86,7 @@ def dcf_upside_base(fcf_base, price, shares, net_debt,
         return None
     dcf = run_dcf(fcf_base=fcf_base, growth_rates=growth_rates, wacc=wacc,
                   terminal_growth=terminal_growth, years=years,
-                  shares=shares, net_debt=net_debt)
+                  shares=shares, net_debt=net_debt,
+                  terminal_multiple=terminal_multiple)
     iv = dcf["base"].intrinsic
     return (iv - price) / price * 100 if iv > 0 else None
