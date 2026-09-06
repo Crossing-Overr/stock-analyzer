@@ -88,6 +88,9 @@ else:
                      f" + β {wacc_est.beta_used:.2f} × ERP {ERP*100:.0f}%")
     st.caption((f"{base_note}{wacc_note} · горизонт {params.years} лет · "
                 f"терм. рост {params.terminal_growth*100:.1f}%").replace("$", "\\$"))
+    st.caption("⚠️ Оценка по текущему FCF: быстрорастущие компании обычно выглядят "
+               "«дорогими» — модель не закладывает будущий рост маржи. Чистый долг "
+               "из Yahoo включает лизинг, что занижает оценку.")
 
 C.price_chart(td.history)
 
