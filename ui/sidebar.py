@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from typing import Optional
 import streamlit as st
 
 
@@ -8,6 +9,7 @@ class DcfParams:
     wacc: float          # значение ползунка — используется в ручном режиме
     wacc_auto: bool      # True → страницы считают WACC по CAPM (бета тикера)
     terminal_growth: float
+    terminal_multiple: Optional[float]   # None → терминал по Гордону
     growth_rates: dict   # {"bear":..,"base":..,"bull":..}
     subtract_sbc: bool
 
@@ -31,8 +33,22 @@ def render_sidebar() -> DcfParams:
         else:
             wacc = st.slider("WACC (%)", 5.0, 20.0, 10.0, 0.5, key="dcf_wacc") / 100
 
+        term_mode = st.radio(
+            "Терминальная стоимость", ["Рост (Гордон)", "Мультипликатор"],
+            key="dcf_term_mode",
+            help="Гордон: вечная рента при заданном росте. Мультипликатор (подход "
+                 "Карлина): «во сколько FCF оценят компанию в конце горизонта» — "
+                 "нынешний Гордон при WACC 10% эквивалентен всего ≈13.5x.",
+        )
         terminal_growth = st.slider("Терминальный рост (%)", 1.0, 5.0, 2.5, 0.25,
                                     key="dcf_tg") / 100
+        if term_mode == "Мультипликатор":
+            terminal_multiple = float(st.slider(
+                "Мультипликатор к FCF последнего года", 5, 40, 15, 1, key="dcf_mult"))
+            st.caption("Терминальный рост в этом режиме не влияет на терминал, "
+                       "но задаёт, к чему затухает рост FCF.")
+        else:
+            terminal_multiple = None
 
         st.markdown("#### Стартовый рост FCF (%/год)")
         st.caption("Рост в 1-й год. Дальше линейно затухает к терминальному.")
@@ -52,7 +68,7 @@ def render_sidebar() -> DcfParams:
 
     return DcfParams(
         years=years, wacc=wacc, wacc_auto=wacc_auto,
-        terminal_growth=terminal_growth,
+        terminal_growth=terminal_growth, terminal_multiple=terminal_multiple,
         growth_rates={"bear": bear_g, "base": base_g, "bull": bull_g},
         subtract_sbc=subtract_sbc,
     )
