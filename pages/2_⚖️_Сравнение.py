@@ -4,7 +4,7 @@ from core.data import load_ticker, load_risk_free
 from core.compare import build_comparison_table
 from core.dcf_analysis import ticker_base_upside
 from core.favorites import get_favorites
-from ui.theme import inject_theme
+from ui.theme import inject_theme, COLORS
 from ui.sidebar import render_sidebar
 
 st.set_page_config(page_title="Сравнение · Stock Analysator", page_icon="⚖️", layout="wide")
@@ -55,11 +55,11 @@ for row in table.rows:
         elif i == row.worst_index:
             cls = "cmp-worst"
         cells += f"<td class='{cls}' style='padding:8px 14px;text-align:right'>{disp}</td>"
-    rows_html += (f"<tr><td style='padding:8px 14px;color:#a6adc8'>{row.label}</td>{cells}</tr>")
+    rows_html += (f"<tr><td style='padding:8px 14px;color:{COLORS['text_dim']}'>{row.label}</td>{cells}</tr>")
 
 st.markdown(f"""
-<table style='width:100%;border-collapse:collapse;background:#1e1e2e;
-border:1px solid #313244;border-radius:12px'>
+<table style='width:100%;border-collapse:collapse;background:{COLORS['surface']};
+border:1px solid {COLORS['border']};border-radius:12px'>
 <thead><tr><th style='padding:8px 14px;text-align:left'>Метрика</th>{header}</tr></thead>
 <tbody>{rows_html}</tbody>
 </table>

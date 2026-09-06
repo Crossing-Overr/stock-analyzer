@@ -3,7 +3,7 @@ import streamlit as st
 
 from core.data import fmt_large, load_prices
 from core.screener import screen, load_snapshot, PRESETS, ScreenFilters
-from ui.theme import inject_theme
+from ui.theme import inject_theme, COLORS
 
 st.set_page_config(page_title="Идеи · Stock Analysator", page_icon="💎", layout="wide")
 inject_theme()
@@ -76,17 +76,17 @@ if not res.rows:
 # ─── Карточки ────────────────────────────────────────────────────────────────
 for r in res.rows:
     risk = r.get("badge") == "risk"
-    border = "#3a2a45" if risk else "#313244"
-    bg = "#171320" if risk else "#1e1e2e"
+    border = COLORS["warn"] + "55" if risk else COLORS["border"]
+    bg = COLORS["warn"] + "0f" if risk else COLORS["surface"]
     up = r.get("upside_base")
     up_txt = f"{up:+.1f}%" if up is not None else "N/A"
-    up_col = "#a6e3a1" if (up or 0) >= 0 else "#f38ba8"
+    up_col = COLORS["pos"] if (up or 0) >= 0 else COLORS["neg"]
     fair = r["price"] * (1 + up / 100) if (up is not None and r.get("price")) else None
     fair_txt = f"${fair:.2f}" if fair else "N/A"
     ig, rg = r.get("implied_growth"), r.get("revenue_growth")
-    grow = (f"Заложен <b>{ig*100:.0f}%</b> · факт <b style='color:#a6e3a1'>{rg*100:.0f}%</b>"
+    grow = (f"Заложен <b>{ig*100:.0f}%</b> · факт <b style='color:{COLORS['pos']}'>{rg*100:.0f}%</b>"
             if (ig is not None and rg is not None) else "")
-    badge = ("<span style='background:rgba(249,226,175,0.18);color:#f9e2af;font-size:10px;"
+    badge = (f"<span style='background:{COLORS['warn']}33;color:{COLORS['warn']};font-size:10px;"
              "font-weight:700;padding:2px 7px;border-radius:6px;margin-left:7px'>⚠️ РИСК</span>"
              if risk else "")
     pe_txt = f"{r['pe']:.0f}" if r.get("pe") else "—"
@@ -97,20 +97,20 @@ for r in res.rows:
         <div style="background:{bg};border:1px solid {border};border-radius:12px;
         padding:13px 16px;margin-bottom:4px;display:flex;align-items:center;gap:18px">
           <div style="min-width:150px">
-            <div style="color:#cdd6f4;font-size:14px;font-weight:700">{r['symbol']}{badge}</div>
-            <div style="color:#6c7086;font-size:11px">{(r.get('name') or '')[:26]}</div>
-            <div style="color:#a6adc8;font-size:11px;margin-top:2px">${r['price']:.2f}</div>
+            <div style="color:{COLORS['text']};font-size:14px;font-weight:700">{r['symbol']}{badge}</div>
+            <div style="color:{COLORS['text_muted']};font-size:11px">{(r.get('name') or '')[:26]}</div>
+            <div style="color:{COLORS['text_dim']};font-size:11px;margin-top:2px">${r['price']:.2f}</div>
           </div>
           <div style="flex:1">
-            <div style="color:#6c7086;font-size:10px;text-transform:uppercase;letter-spacing:0.05em">Справедливая · Base</div>
+            <div style="color:{COLORS['text_muted']};font-size:10px;text-transform:uppercase;letter-spacing:0.05em">Справедливая · Base</div>
             <div style="display:flex;align-items:baseline;gap:9px">
-              <span style="color:#f5f5fa;font-size:20px;font-weight:700">{fair_txt}</span>
+              <span style="color:{COLORS['text']};font-size:20px;font-weight:700">{fair_txt}</span>
               <span style="color:{up_col};font-size:14px;font-weight:700">{up_txt}</span>
             </div>
           </div>
           <div style="text-align:right;min-width:180px">
-            <div style="color:#a6adc8;font-size:11px">{grow}</div>
-            <div style="color:#6c7086;font-size:11px;margin-top:2px">P/E {pe_txt} · кап. {fmt_large(r.get('market_cap'))}</div>
+            <div style="color:{COLORS['text_dim']};font-size:11px">{grow}</div>
+            <div style="color:{COLORS['text_muted']};font-size:11px;margin-top:2px">P/E {pe_txt} · кап. {fmt_large(r.get('market_cap'))}</div>
           </div>
         </div>
         """, unsafe_allow_html=True)
