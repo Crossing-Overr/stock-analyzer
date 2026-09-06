@@ -308,3 +308,34 @@ def load_risk_free():
     except Exception:
         pass
     return RF_DEFAULT, False
+
+
+@st.cache_data(ttl=900, show_spinner=False)
+def load_prices(symbols: tuple) -> dict:
+    """
+    Живые цены (last close) для набора тикеров одним запросом — для «живого»
+    обновления показанных карточек подборки. symbols — tuple (для кэша).
+    Возвращает {symbol: price}; тикеры без цены просто отсутствуют.
+    """
+    if not symbols:
+        return {}
+    try:
+        data = yf.download(list(symbols), period="1d", progress=False)
+        close = data["Close"]
+    except Exception:
+        return {}
+    out = {}
+    if getattr(close, "columns", None) is not None:      # несколько тикеров → DataFrame
+        last = close.iloc[-1]
+        for s in symbols:
+            v = last.get(s)
+            if v is not None and v == v:                 # не NaN
+                out[s] = float(v)
+    else:                                                # один тикер → Series
+        try:
+            v = float(close.iloc[-1])
+            if v == v:
+                out[symbols[0]] = v
+        except Exception:
+            pass
+    return out

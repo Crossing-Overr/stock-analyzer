@@ -10,6 +10,8 @@ class ScreenFilters:
     min_upside: Optional[float] = None            # % (upside_base)
     max_pe: Optional[float] = None
     min_revenue_growth: Optional[float] = None    # доля (0.05 = 5%)
+    min_market_cap: Optional[float] = None        # $ (market_cap)
+    max_market_cap: Optional[float] = None        # $
 
 
 @dataclass
@@ -109,6 +111,14 @@ def _passes_filters(r, f: ScreenFilters):
     if f.min_revenue_growth is not None:
         rg = _num(r, "revenue_growth")
         if rg is None or rg < f.min_revenue_growth:
+            return False
+    if f.min_market_cap is not None:
+        mc = _num(r, "market_cap")
+        if mc is None or mc < f.min_market_cap:
+            return False
+    if f.max_market_cap is not None:
+        mc = _num(r, "market_cap")
+        if mc is None or mc > f.max_market_cap:
             return False
     return True
 

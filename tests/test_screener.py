@@ -112,3 +112,14 @@ def test_limit_caps_rows():
     res = screen(snap, "undervalued", ScreenFilters(), limit=1)
     assert len(res.rows) == 1
     assert res.total_passed >= 1     # total не обрезается лимитом
+
+
+def test_market_cap_filters():
+    snap = _snapshot()                     # все market_cap = 1e11
+    # мин выше всех → пусто
+    assert screen(snap, "undervalued", ScreenFilters(min_market_cap=2e11)).rows == []
+    # макс ниже всех → пусто
+    assert screen(snap, "undervalued", ScreenFilters(max_market_cap=5e10)).rows == []
+    # диапазон, в который все попадают → CHEAP на месте
+    res = screen(snap, "undervalued", ScreenFilters(min_market_cap=5e10, max_market_cap=2e11))
+    assert res.rows[0]["symbol"] == "CHEAP"
