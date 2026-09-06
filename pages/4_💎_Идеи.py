@@ -8,6 +8,11 @@ from ui.theme import inject_theme, COLORS
 st.set_page_config(page_title="Идеи · Stock Analysator", page_icon="💎", layout="wide")
 inject_theme()
 
+
+def terminal_multiple_active() -> bool:
+    """Включён ли на других вкладках режим терминального мультипликатора."""
+    return st.session_state.get("dcf_term_mode") == "Мультипликатор"
+
 SNAPSHOT = os.path.join(os.path.dirname(__file__), "..", "data", "sp500_snapshot.json")
 
 st.markdown("# 💎 Идеи — куда присмотреться")
@@ -68,6 +73,9 @@ for r in res.rows:
 fresh = "· 🔄 цены обновлены сейчас" if live else ""
 st.caption(f"Фундамент на {res.as_of} {fresh} · **{res.total_passed}** компаний прошло "
            f"фильтр · показаны топ-{len(res.rows)}")
+if terminal_multiple_active():
+    st.caption("⚠️ Подборка посчитана по терминальному росту (Гордон) — снимок "
+               "предпосчитан. Режим мультипликатора действует на вкладке «Анализ».")
 
 if not res.rows:
     st.info("Ничего не найдено — ослабь фильтры или выбери другой пресет.")

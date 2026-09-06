@@ -62,6 +62,7 @@ else:
         fcf_base=fcf_base, growth_rates=params.growth_rates,
         wacc=eff_wacc, terminal_growth=params.terminal_growth,
         years=params.years, shares=td.shares_outstanding, net_debt=td.net_debt,
+        terminal_multiple=params.terminal_multiple,
     )
     C.verdict_card(dcf, td.price, eff_wacc)
 
@@ -69,11 +70,13 @@ else:
         price=td.price, fcf_base=fcf_base, shares=td.shares_outstanding,
         net_debt=td.net_debt, wacc=eff_wacc,
         terminal_growth=params.terminal_growth, years=params.years,
+        terminal_multiple=params.terminal_multiple,
     )
     ir = implied_return(
         price=td.price, fcf_base=fcf_base, shares=td.shares_outstanding,
         net_debt=td.net_debt, growth_start=params.growth_rates["base"],
         terminal_growth=params.terminal_growth, years=params.years,
+        terminal_multiple=params.terminal_multiple,
     )
     C.reverse_dcf_cards(ig, ir, params.terminal_growth, td.revenue_growth, rf)
 
@@ -86,8 +89,11 @@ else:
     if wacc_est is not None:
         wacc_note = (f" · WACC {eff_wacc*100:.1f}% = rf {wacc_est.risk_free*100:.1f}%"
                      f" + β {wacc_est.beta_used:.2f} × ERP {ERP*100:.0f}%")
+    term_note = (f"терминал {params.terminal_multiple:.0f}x FCF"
+                 if params.terminal_multiple
+                 else f"терм. рост {params.terminal_growth*100:.1f}%")
     st.caption((f"{base_note}{wacc_note} · горизонт {params.years} лет · "
-                f"терм. рост {params.terminal_growth*100:.1f}%").replace("$", "\\$"))
+                f"{term_note}").replace("$", "\\$"))
     st.caption("⚠️ Оценка по текущему FCF: быстрорастущие компании обычно выглядят "
                "«дорогими» — модель не закладывает будущий рост маржи. Чистый долг "
                "из Yahoo включает лизинг, что занижает оценку.")
@@ -163,7 +169,7 @@ if dcf is not None:
             fcf_base=fcf_base, price=td.price, shares=td.shares_outstanding,
             net_debt=td.net_debt, growth_start=params.growth_rates["base"],
             wacc=eff_wacc, terminal_growth=params.terminal_growth,
-            years=params.years,
+            years=params.years, terminal_multiple=params.terminal_multiple,
         )
         if grid is None:
             st.caption("Недостаточно данных для расчёта.")
