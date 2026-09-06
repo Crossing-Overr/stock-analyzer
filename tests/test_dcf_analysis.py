@@ -132,3 +132,42 @@ def test_normal_grid_has_no_empty_cells():
 def test_grid_none_for_negative_fcf():
     args = {**GRID_ARGS, "fcf_base": -5.0}
     assert sensitivity_grid(wacc=0.10, terminal_growth=0.025, **args) is None
+
+
+# ─── ticker_base_upside: общий хелпер для Сравнения/Избранного ───────────────
+def _fake_td(fcf=5e9, price=100.0, beta=1.0, cap=1e11):
+    """Минимальный TickerData через from_info (без cashflow → база = trailing FCF)."""
+    from core.data import TickerData
+    return TickerData.from_info("X", {
+        "currentPrice": price, "freeCashflow": fcf, "sharesOutstanding": 1e9,
+        "beta": beta, "marketCap": cap,
+    }, None, None)
+
+
+def _fake_params():
+    from types import SimpleNamespace
+    return SimpleNamespace(wacc_auto=True, wacc=0.10, terminal_growth=0.025,
+                           years=10, subtract_sbc=True,
+                           growth_rates={"bear": 0.02, "base": 0.08, "bull": 0.15})
+
+
+def test_ticker_base_upside_matches_manual_chain():
+    from core.dcf import dcf_upside_base
+    from core.dcf_analysis import ticker_base_upside
+    from core.wacc import effective_wacc_for
+    td, params, rf = _fake_td(), _fake_params(), 0.045
+
+    # то же самое «руками», как было раскопипасчено по страницам
+    w = effective_wacc_for(td, rf, auto=params.wacc_auto, manual=params.wacc)
+    expected = dcf_upside_base(td.dcf_fcf_base(params.subtract_sbc), td.price,
+                               td.shares_outstanding, td.net_debt,
+                               params.growth_rates, w, params.terminal_growth,
+                               params.years)
+    got = ticker_base_upside(td, params, rf)
+    assert got is not None and expected is not None
+    assert math.isclose(got, expected, rel_tol=1e-12)
+
+
+def test_ticker_base_upside_none_for_negative_fcf():
+    from core.dcf_analysis import ticker_base_upside
+    assert ticker_base_upside(_fake_td(fcf=-5e9), _fake_params(), 0.045) is None

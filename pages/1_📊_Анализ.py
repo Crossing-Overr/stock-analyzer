@@ -4,7 +4,7 @@ from core.data import (load_ticker, fmt_large, fmt_pct, fmt_mult, load_risk_free
 from core.dcf import run_dcf
 from core.dcf_analysis import implied_growth, implied_return, sensitivity_grid
 from core.favorites import add_favorite
-from core.wacc import estimate_wacc, ERP
+from core.wacc import estimate_wacc_for, ERP
 from ui.theme import inject_theme
 from ui.sidebar import render_sidebar
 from ui import components as C
@@ -96,8 +96,7 @@ fcf_base = td.fcf_normalized_ex_sbc if use_sbc else td.fcf_normalized
 
 # ─── Действующий WACC: CAPM по бете (auto) или ползунок ─────────────────────
 rf, rf_live = load_risk_free()
-wacc_est = (estimate_wacc(td.beta, rf, td.market_cap, td.total_debt)
-            if params.wacc_auto else None)
+wacc_est = estimate_wacc_for(td, rf) if params.wacc_auto else None
 eff_wacc = wacc_est.wacc if wacc_est is not None else params.wacc
 
 if not td.shares_outstanding:

@@ -60,3 +60,15 @@ def effective_wacc(beta, risk_free, market_cap, total_debt, auto: bool, manual: 
         if est is not None:
             return est.wacc
     return manual
+
+
+def estimate_wacc_for(td, risk_free) -> Optional[WaccEstimate]:
+    """Как estimate_wacc, но берёт бету/кап-ю/долг из TickerData — без повторения
+    `td.beta, rf, td.market_cap, td.total_debt` на каждой странице."""
+    return estimate_wacc(td.beta, risk_free, td.market_cap, td.total_debt)
+
+
+def effective_wacc_for(td, risk_free, auto: bool, manual: float) -> float:
+    """Действующий WACC по TickerData (CAPM в авто-режиме или ползунок)."""
+    return effective_wacc(td.beta, risk_free, td.market_cap, td.total_debt,
+                          auto=auto, manual=manual)

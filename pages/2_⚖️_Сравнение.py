@@ -1,10 +1,9 @@
 import streamlit as st
 
 from core.data import load_ticker, load_risk_free
-from core.dcf import dcf_upside_base
 from core.compare import build_comparison_table
+from core.dcf_analysis import ticker_base_upside
 from core.favorites import get_favorites
-from core.wacc import effective_wacc
 from ui.theme import inject_theme
 from ui.sidebar import render_sidebar
 
@@ -40,14 +39,7 @@ if not tickers:
 
 # апсайд Base-сценария: SBC-консистентная база + per-ticker CAPM-WACC
 rf, _rf_live = load_risk_free()
-base_upsides = {}
-for td in tickers:
-    w = effective_wacc(td.beta, rf, td.market_cap, td.total_debt,
-                       auto=params.wacc_auto, manual=params.wacc)
-    base_upsides[td.symbol] = dcf_upside_base(
-        td.dcf_fcf_base(params.subtract_sbc), td.price, td.shares_outstanding,
-        td.net_debt, params.growth_rates, w, params.terminal_growth, params.years,
-    )
+base_upsides = {td.symbol: ticker_base_upside(td, params, rf) for td in tickers}
 
 table = build_comparison_table(tickers, base_upsides)
 

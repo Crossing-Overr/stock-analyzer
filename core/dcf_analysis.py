@@ -1,7 +1,8 @@
 from dataclasses import dataclass
 from typing import Optional
 
-from core.dcf import run_dcf
+from core.dcf import run_dcf, dcf_upside_base
+from core.wacc import effective_wacc_for
 
 # Диапазоны поиска для обратных задач
 GROWTH_LO = -0.50
@@ -147,3 +148,20 @@ def sensitivity_grid(fcf_base, price, shares, net_debt, growth_start,
         rows.append(row)
 
     return SensitivityGrid(waccs=waccs, terminal_growths=tgs, cells=rows)
+
+
+def ticker_base_upside(td, params, risk_free) -> Optional[float]:
+    """
+    Апсайд Base-сценария по тикеру — одной строкой вместо трёх шагов
+    (действующий WACC → база FCF с учётом SBC → апсайд), которые раньше
+    дословно повторялись на страницах Сравнения и Избранного.
+
+    `params` — объект с полями DcfParams (wacc_auto, wacc, growth_rates,
+    terminal_growth, years, subtract_sbc); core не импортирует ui, поля читаются
+    по «утиной типизации». None, если DCF к тикеру неприменим.
+    """
+    wacc = effective_wacc_for(td, risk_free, auto=params.wacc_auto, manual=params.wacc)
+    return dcf_upside_base(
+        td.dcf_fcf_base(params.subtract_sbc), td.price, td.shares_outstanding,
+        td.net_debt, params.growth_rates, wacc, params.terminal_growth, params.years,
+    )
