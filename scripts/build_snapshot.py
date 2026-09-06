@@ -36,6 +36,11 @@ YEARS = 10
 TG = 0.025
 THROTTLE = 0.7   # пауза между тикерами, сек
 
+# Секторы, для которых FCF-DCF некорректен: у банков/страховщиков «FCF» из Yahoo
+# отражает движение чужих денег/резервов, у REIT нужен FFO, а не FCF. Такие
+# компании выдают абсурдный апсайд (+800%) — исключаем из DCF-подборки.
+NON_DCF_SECTORS = {"Financial Services", "Real Estate"}
+
 
 def read_symbols():
     if len(sys.argv) > 1:
@@ -62,7 +67,8 @@ def compute(sym, rf):
     base = td.dcf_fcf_base(subtract_sbc=True)
     est = estimate_wacc(td.beta, rf, td.market_cap, td.total_debt)
     wacc = est.wacc if est else 0.10
-    applicable = bool(base and base > 0 and td.shares_outstanding)
+    applicable = bool(base and base > 0 and td.shares_outstanding
+                      and td.sector not in NON_DCF_SECTORS)
 
     row = dict(
         symbol=sym, name=td.name, sector=td.sector, price=td.price,
