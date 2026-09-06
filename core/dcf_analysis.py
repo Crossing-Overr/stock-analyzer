@@ -12,10 +12,12 @@ RETURN_HI = 0.50
 # Сетка чувствительности WACC x терминальный рост
 WACC_STEP = 0.01     # 1 п.п.
 TG_STEP = 0.005      # 0.5 п.п.
+MULT_STEP = 2.0      # шаг оси мультипликатора в сетке чувствительности
 GRID_RADIUS = 2      # ±2 шага → сетка 5×5
 
 
-def _intrinsic(fcf_base, growth_start, wacc, terminal_growth, years, shares, net_debt) -> float:
+def _intrinsic(fcf_base, growth_start, wacc, terminal_growth, years, shares, net_debt,
+               terminal_multiple=None) -> float:
     """Справедливая цена одного сценария. Тонкая обёртка над моделью."""
     res = run_dcf(
         fcf_base=fcf_base,
@@ -25,6 +27,7 @@ def _intrinsic(fcf_base, growth_start, wacc, terminal_growth, years, shares, net
         years=years,
         shares=shares,
         net_debt=net_debt,
+        terminal_multiple=terminal_multiple,
     )
     return res["base"].intrinsic
 
@@ -65,6 +68,7 @@ def _inputs_valid(price, fcf_base, shares) -> bool:
 
 
 def implied_growth(price, fcf_base, shares, net_debt, wacc, terminal_growth, years,
+                   terminal_multiple=None,
                    lo: float = GROWTH_LO, hi: float = GROWTH_HI) -> Optional[float]:
     """
     Стартовый рост FCF, при котором справедливая цена = рыночной,
@@ -76,13 +80,14 @@ def implied_growth(price, fcf_base, shares, net_debt, wacc, terminal_growth, yea
         return None
 
     def f(g):
-        return _intrinsic(fcf_base, g, wacc, terminal_growth, years, shares, net_debt) - price
+        return _intrinsic(fcf_base, g, wacc, terminal_growth, years, shares, net_debt,
+                          terminal_multiple) - price
 
     return _bisect(f, lo, hi)
 
 
 def implied_return(price, fcf_base, shares, net_debt, growth_start, terminal_growth, years,
-                   hi: float = RETURN_HI) -> Optional[float]:
+                   terminal_multiple=None, hi: float = RETURN_HI) -> Optional[float]:
     """
     Ставка дисконтирования, при которой справедливая цена = рыночной, т.е.
     «сколько годовых даст покупка по текущей цене при заданном росте».
@@ -98,7 +103,8 @@ def implied_return(price, fcf_base, shares, net_debt, growth_start, terminal_gro
         return None
 
     def f(r):
-        return _intrinsic(fcf_base, growth_start, r, terminal_growth, years, shares, net_debt) - price
+        return _intrinsic(fcf_base, growth_start, r, terminal_growth, years, shares,
+                          net_debt, terminal_multiple) - price
 
     return _bisect(f, lo, hi)
 
@@ -106,48 +112,66 @@ def implied_return(price, fcf_base, shares, net_debt, growth_start, terminal_gro
 @dataclass
 class SensitivityCell:
     wacc: float
-    terminal_growth: float
-    intrinsic: Optional[float]   # None, если терм. рост >= WACC (модель Гордона неприменима)
-    upside: Optional[float]      # % к текущей цене
-    is_current: bool             # ячейка текущих настроек ползунков
+    terminal_growth: Optional[float]   # None в режиме мультипликатора
+    multiple: Optional[float]          # None в режиме Гордона
+    intrinsic: Optional[float]         # None, если терм. рост >= WACC (Гордон неприменим)
+    upside: Optional[float]            # % к текущей цене
+    is_current: bool                   # ячейка текущих настроек ползунков
 
 
 @dataclass
 class SensitivityGrid:
-    waccs: list              # значения по столбцам
-    terminal_growths: list   # значения по строкам
-    cells: list              # list[list[SensitivityCell]], строки — по terminal_growths
+    waccs: list                          # значения по столбцам
+    terminal_growths: Optional[list]     # ось строк в режиме Гордона (иначе None)
+    multiples: Optional[list]            # ось строк в режиме мультипликатора (иначе None)
+    cells: list                          # list[list[SensitivityCell]]
 
 
 def sensitivity_grid(fcf_base, price, shares, net_debt, growth_start,
-                     wacc, terminal_growth, years,
+                     wacc, terminal_growth, years, terminal_multiple=None,
                      wacc_step: float = WACC_STEP, tg_step: float = TG_STEP,
+                     mult_step: float = MULT_STEP,
                      radius: int = GRID_RADIUS) -> Optional[SensitivityGrid]:
     """
-    Сетка «WACC × терминальный рост» вокруг текущих настроек. Рост FCF берётся
-    базовый (Base-сценарий) и не варьируется — меняются только ставки.
-    None, если DCF в принципе неприменим (FCF ≤ 0 и т.п.).
+    Сетка чувствительности вокруг текущих настроек. Рост FCF берётся базовый и не
+    варьируется. Ось строк зависит от режима терминала: терминальный рост (Гордон)
+    или мультипликатор. None, если DCF в принципе неприменим.
     """
     if not _inputs_valid(price, fcf_base, shares):
         return None
 
     waccs = [wacc + i * wacc_step for i in range(-radius, radius + 1)]
-    tgs = [terminal_growth + i * tg_step for i in range(-radius, radius + 1)]
+    use_mult = bool(terminal_multiple and terminal_multiple > 0)
 
+    if use_mult:
+        row_vals = [terminal_multiple + i * mult_step for i in range(-radius, radius + 1)]
+    else:
+        row_vals = [terminal_growth + i * tg_step for i in range(-radius, radius + 1)]
+
+    centre_val = terminal_multiple if use_mult else terminal_growth
     rows = []
-    for tg in tgs:
+    for rv in row_vals:
         row = []
         for w in waccs:
-            is_current = (abs(w - wacc) < 1e-9) and (abs(tg - terminal_growth) < 1e-9)
-            if tg >= w:
-                row.append(SensitivityCell(w, tg, None, None, is_current))
+            is_current = (abs(w - wacc) < 1e-9) and (abs(rv - centre_val) < 1e-9)
+            if use_mult:
+                iv = _intrinsic(fcf_base, growth_start, w, terminal_growth, years,
+                                shares, net_debt, rv)
+                upside = (iv - price) / price * 100 if iv > 0 else None
+                row.append(SensitivityCell(w, None, rv, iv, upside, is_current))
                 continue
-            iv = _intrinsic(fcf_base, growth_start, w, tg, years, shares, net_debt)
+            if rv >= w:      # ограничение Гордона: терм. рост должен быть ниже WACC
+                row.append(SensitivityCell(w, rv, None, None, None, is_current))
+                continue
+            iv = _intrinsic(fcf_base, growth_start, w, rv, years, shares, net_debt)
             upside = (iv - price) / price * 100 if iv > 0 else None
-            row.append(SensitivityCell(w, tg, iv, upside, is_current))
+            row.append(SensitivityCell(w, rv, None, iv, upside, is_current))
         rows.append(row)
 
-    return SensitivityGrid(waccs=waccs, terminal_growths=tgs, cells=rows)
+    return SensitivityGrid(waccs=waccs,
+                           terminal_growths=None if use_mult else row_vals,
+                           multiples=row_vals if use_mult else None,
+                           cells=rows)
 
 
 def ticker_base_upside(td, params, risk_free) -> Optional[float]:
@@ -164,4 +188,5 @@ def ticker_base_upside(td, params, risk_free) -> Optional[float]:
     return dcf_upside_base(
         td.dcf_fcf_base(params.subtract_sbc), td.price, td.shares_outstanding,
         td.net_debt, params.growth_rates, wacc, params.terminal_growth, params.years,
+        terminal_multiple=getattr(params, "terminal_multiple", None),
     )

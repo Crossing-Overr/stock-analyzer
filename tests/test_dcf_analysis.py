@@ -171,3 +171,56 @@ def test_ticker_base_upside_matches_manual_chain():
 def test_ticker_base_upside_none_for_negative_fcf():
     from core.dcf_analysis import ticker_base_upside
     assert ticker_base_upside(_fake_td(fcf=-5e9), _fake_params(), 0.045) is None
+
+
+def test_implied_growth_roundtrip_with_terminal_multiple():
+    """Round-trip работает и в режиме мультипликатора."""
+    from core.dcf import run_dcf as _run
+    fair = _run(fcf_base=100.0, growth_rates={"base": 0.08}, wacc=0.10,
+                terminal_growth=0.025, years=10, shares=10.0, net_debt=0.0,
+                terminal_multiple=20.0)["base"].intrinsic
+    g = implied_growth(price=fair, fcf_base=100.0, shares=10.0, net_debt=0.0,
+                       wacc=0.10, terminal_growth=0.025, years=10,
+                       terminal_multiple=20.0)
+    assert g is not None and math.isclose(g, 0.08, abs_tol=1e-4)
+
+
+def test_implied_growth_multiple_gives_lower_implied_than_gordon():
+    """При щедром терминале та же цена оправдывается меньшим ростом."""
+    common = dict(price=200.0, fcf_base=100.0, shares=10.0, net_debt=0.0,
+                  wacc=0.10, terminal_growth=0.025, years=10)
+    g_gordon = implied_growth(**common)
+    g_mult = implied_growth(**common, terminal_multiple=25.0)
+    assert g_gordon is not None and g_mult is not None
+    assert g_mult < g_gordon
+
+
+def test_implied_return_accepts_terminal_multiple():
+    r = implied_return(price=150.0, fcf_base=100.0, shares=10.0, net_debt=0.0,
+                       growth_start=0.08, terminal_growth=0.025, years=10,
+                       terminal_multiple=20.0)
+    assert r is not None and 0.0 < r < 0.5
+
+
+def test_sensitivity_grid_varies_multiple_when_given():
+    """В режиме мультипликатора вторая ось — мультипликатор, пустых ячеек нет."""
+    g = sensitivity_grid(fcf_base=100.0, price=50.0, shares=10.0, net_debt=0.0,
+                         growth_start=0.08, wacc=0.10, terminal_growth=0.025,
+                         years=10, terminal_multiple=15.0)
+    assert g.multiples is not None
+    assert g.terminal_growths is None
+    assert len(g.multiples) == 5 and len(g.cells) == 5
+    assert math.isclose(g.multiples[2], 15.0, abs_tol=1e-9)
+    assert math.isclose(g.multiples[0], 11.0, abs_tol=1e-9)
+    assert math.isclose(g.multiples[4], 19.0, abs_tol=1e-9)
+    assert all(c.intrinsic is not None for row in g.cells for c in row)
+    assert sum(1 for row in g.cells for c in row if c.is_current) == 1
+
+
+def test_sensitivity_grid_gordon_mode_unchanged():
+    """Без мультипликатора сетка прежняя: ось терм. роста, multiples=None."""
+    g = sensitivity_grid(fcf_base=100.0, price=50.0, shares=10.0, net_debt=0.0,
+                         growth_start=0.08, wacc=0.10, terminal_growth=0.025,
+                         years=10)
+    assert g.multiples is None
+    assert g.terminal_growths is not None and len(g.terminal_growths) == 5

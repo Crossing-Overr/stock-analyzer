@@ -188,6 +188,8 @@ def sensitivity_table(grid, mode: str = "upside") -> None:
     Сетка чувствительности. mode: "upside" (апсайд %) или "price" (цена $).
     Рендерим сырым HTML — в нём $ не превращается в формулу LaTeX.
     """
+    is_mult = grid.multiples is not None
+    corner = "Мультипл. ↓ / WACC →" if is_mult else "Терм. рост ↓ / WACC →"
     header = "".join(
         f"<th style='padding:6px 10px;text-align:right'>{w * 100:.1f}%</th>"
         for w in grid.waccs
@@ -208,14 +210,15 @@ def sensitivity_table(grid, mode: str = "upside") -> None:
             border = f"border:2px solid {COLORS['warn']};" if cell.is_current else ""
             cells += (f"<td class='{cls}' style='padding:6px 10px;"
                       f"text-align:right;{border}'>{text}</td>")
-        label = f"{row[0].terminal_growth * 100:.2f}%"
+        label = (f"{row[0].multiple:.0f}x" if is_mult
+                 else f"{row[0].terminal_growth * 100:.2f}%")
         rows_html += (f"<tr><td style='padding:6px 10px;color:{COLORS['text_dim']}'>"
                       f"{label}</td>{cells}</tr>")
 
     st.markdown(f"""
     <table style='width:100%;border-collapse:collapse;background:{COLORS['surface']};
     border:1px solid {COLORS['border']};border-radius:12px'>
-    <thead><tr><th style='padding:6px 10px;text-align:left'>Терм. рост ↓ / WACC →</th>
+    <thead><tr><th style='padding:6px 10px;text-align:left'>{corner}</th>
     {header}</tr></thead>
     <tbody>{rows_html}</tbody>
     </table>
