@@ -89,9 +89,14 @@ else:
     if wacc_est is not None:
         wacc_note = (f" · WACC {eff_wacc*100:.1f}% = rf {wacc_est.risk_free*100:.1f}%"
                      f" + β {wacc_est.beta_used:.2f} × ERP {ERP*100:.0f}%")
-    term_note = (f"терминал {params.terminal_multiple:.0f}x FCF"
+    # Эквивалент Гордона в мультипликаторах: (1+g)/(WACC−g). Сильно зависит от WACC
+    # (у защитных имён с низкой бетой он куда выше), поэтому показываем для сравнения.
+    _g = min(params.terminal_growth, eff_wacc - 1e-3)
+    gordon_x = (1 + _g) / (eff_wacc - _g)
+    term_note = (f"терминал {params.terminal_multiple:.0f}x FCF "
+                 f"(Гордон здесь дал бы {gordon_x:.1f}x)"
                  if params.terminal_multiple
-                 else f"терм. рост {params.terminal_growth*100:.1f}%")
+                 else f"терм. рост {params.terminal_growth*100:.1f}% (это {gordon_x:.1f}x FCF)")
     st.caption((f"{base_note}{wacc_note} · горизонт {params.years} лет · "
                 f"{term_note}").replace("$", "\\$"))
     st.caption("⚠️ Оценка по текущему FCF: быстрорастущие компании обычно выглядят "
@@ -162,7 +167,8 @@ if dcf is not None:
         st.markdown("##### Справедливая цена vs текущая")
         C.dcf_fair_value(dcf, td.price)
 
-        st.markdown("##### Чувствительность (WACC × терминальный рост)")
+        _axis = "мультипликатор" if params.terminal_multiple else "терминальный рост"
+        st.markdown(f"##### Чувствительность (WACC × {_axis})")
         mode_label = st.radio("Показывать", ["Апсайд %", "Справедливая цена $"],
                               horizontal=True, key="sens_mode")
         grid = sensitivity_grid(
